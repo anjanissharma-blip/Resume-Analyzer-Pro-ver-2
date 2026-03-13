@@ -1,8 +1,16 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
+import healthRouter from "./health.js";
+import jobsRouter from "./jobs.js";
+import resumesRouter from "./resumes.js";
+import screeningRouter from "./screening.js";
+import reportsRouter from "./reports.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(jobsRouter);
+router.use(resumesRouter);
+router.use(screeningRouter);
+router.use(reportsRouter);
 
 export default router;

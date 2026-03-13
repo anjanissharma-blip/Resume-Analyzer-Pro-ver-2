@@ -1,22 +1,28 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: AI Resume Screening System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: jobs
+    description: Job reference management
+  - name: resumes
+    description: Resume upload and management
+  - name: screening
+    description: AI screening and evaluation
+  - name: reports
+    description: Report generation and download
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +30,240 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List all job references
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Create a new job reference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+
+  /jobs/{jobId}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get a job by ID
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      summary: Delete a job reference
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /jobs/{jobId}/resumes:
+    get:
+      operationId: listResumesForJob
+      tags: [resumes]
+      summary: List all resumes for a job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of resumes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Resume"
+
+  /resumes/upload:
+    post:
+      operationId: uploadResumes
+      tags: [resumes]
+      summary: Upload one or more resumes
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [jobId, files]
+              properties:
+                jobId:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+
+  /resumes/{resumeId}:
+    get:
+      operationId: getResume
+      tags: [resumes]
+      summary: Get resume with screening results
+      parameters:
+        - name: resumeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resume with results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResumeWithResults"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteResume
+      tags: [resumes]
+      summary: Delete a resume
+      parameters:
+        - name: resumeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResponse"
+
+  /screening/{resumeId}:
+    post:
+      operationId: screenResume
+      tags: [screening]
+      summary: Trigger AI screening for a resume
+      parameters:
+        - name: resumeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Screening results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreeningResult"
+
+  /screening/batch/{jobId}:
+    post:
+      operationId: screenBatch
+      tags: [screening]
+      summary: Screen all pending resumes for a job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Batch screening status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchScreeningResult"
+
+  /reports/resume/{resumeId}:
+    get:
+      operationId: downloadResumeReport
+      tags: [reports]
+      summary: Download individual candidate report as JSON
+      parameters:
+        - name: resumeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Candidate report data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandidateReport"
+
+  /reports/batch/{jobId}:
+    get:
+      operationId: downloadBatchReport
+      tags: [reports]
+      summary: Download batch summary CSV for a job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +271,271 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    DeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        jobRefNumber:
+          type: string
+        title:
+          type: string
+        department:
+          type: string
+        description:
+          type: string
+        requiredSkills:
+          type: array
+          items:
+            type: string
+        experienceRequired:
+          type: string
+        educationRequired:
+          type: string
+        status:
+          type: string
+          enum: [active, closed]
+        resumeCount:
+          type: integer
+        screenedCount:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - jobRefNumber
+        - title
+        - description
+        - status
+        - resumeCount
+        - screenedCount
+        - createdAt
+
+    CreateJobRequest:
+      type: object
+      properties:
+        jobRefNumber:
+          type: string
+        title:
+          type: string
+        department:
+          type: string
+        description:
+          type: string
+        requiredSkills:
+          type: array
+          items:
+            type: string
+        experienceRequired:
+          type: string
+        educationRequired:
+          type: string
+      required: [jobRefNumber, title, description]
+
+    Resume:
+      type: object
+      properties:
+        id:
+          type: string
+        jobId:
+          type: string
+        fileName:
+          type: string
+        fileType:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, screened, failed]
+        candidateName:
+          type: string
+        candidateEmail:
+          type: string
+        atsScore:
+          type: number
+        suitabilityScore:
+          type: number
+        createdAt:
+          type: string
+      required: [id, jobId, fileName, fileType, status, createdAt]
+
+    ResumeWithResults:
+      type: object
+      properties:
+        id:
+          type: string
+        jobId:
+          type: string
+        fileName:
+          type: string
+        fileType:
+          type: string
+        status:
+          type: string
+        candidateName:
+          type: string
+        candidateEmail:
+          type: string
+        candidatePhone:
+          type: string
+        candidateAddress:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        experience:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              company:
+                type: string
+              duration:
+                type: string
+              description:
+                type: string
+        education:
+          type: array
+          items:
+            type: object
+            properties:
+              degree:
+                type: string
+              institution:
+                type: string
+              year:
+                type: string
+        atsScore:
+          type: number
+        suitabilityScore:
+          type: number
+        matchingSkills:
+          type: array
+          items:
+            type: string
+        skillGaps:
+          type: array
+          items:
+            type: string
+        experienceMatch:
+          type: string
+        aiSummary:
+          type: string
+        createdAt:
+          type: string
+        screenedAt:
+          type: string
+      required: [id, jobId, fileName, fileType, status, createdAt]
+
+    UploadResult:
+      type: object
+      properties:
+        uploaded:
+          type: integer
+        resumeIds:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+      required: [uploaded, resumeIds, message]
+
+    ScreeningResult:
+      type: object
+      properties:
+        resumeId:
+          type: string
+        atsScore:
+          type: number
+        suitabilityScore:
+          type: number
+        matchingSkills:
+          type: array
+          items:
+            type: string
+        skillGaps:
+          type: array
+          items:
+            type: string
+        experienceMatch:
+          type: string
+        aiSummary:
+          type: string
+        status:
+          type: string
+      required: [resumeId, atsScore, suitabilityScore, matchingSkills, skillGaps, experienceMatch, aiSummary, status]
+
+    BatchScreeningResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+        total:
+          type: integer
+        screened:
+          type: integer
+        failed:
+          type: integer
+        message:
+          type: string
+      required: [jobId, total, screened, failed, message]
+
+    CandidateReport:
+      type: object
+      properties:
+        jobRefNumber:
+          type: string
+        jobTitle:
+          type: string
+        candidateName:
+          type: string
+        candidateEmail:
+          type: string
+        candidatePhone:
+          type: string
+        candidateAddress:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        experience:
+          type: array
+          items:
+            type: object
+        education:
+          type: array
+          items:
+            type: object
+        atsScore:
+          type: number
+        suitabilityScore:
+          type: number
+        matchingSkills:
+          type: array
+          items:
+            type: string
+        skillGaps:
+          type: array
+          items:
+            type: string
+        experienceMatch:
+          type: string
+        aiSummary:
+          type: string
+        reportGeneratedAt:
+          type: string
+      required: [jobRefNumber, jobTitle, atsScore, suitabilityScore, matchingSkills, skillGaps, experienceMatch, aiSummary, reportGeneratedAt]
