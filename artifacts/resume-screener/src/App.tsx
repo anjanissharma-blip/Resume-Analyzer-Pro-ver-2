@@ -10,6 +10,8 @@ import { JobsList } from "@/pages/JobsList";
 import { CreateJob } from "@/pages/CreateJob";
 import { JobDetail } from "@/pages/JobDetail";
 import { ResumeDetail } from "@/pages/ResumeDetail";
+import { UploadPage } from "@/pages/UploadPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +31,8 @@ function Router() {
         <Route path="/jobs/new" component={CreateJob} />
         <Route path="/jobs/:jobId" component={JobDetail} />
         <Route path="/resumes/:resumeId" component={ResumeDetail} />
+        <Route path="/upload" component={UploadPage} />
+        <Route path="/reports" component={ReportsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
