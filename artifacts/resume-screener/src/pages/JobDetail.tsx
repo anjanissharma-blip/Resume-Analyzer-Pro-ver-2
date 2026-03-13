@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { 
   ArrowLeft, UploadCloud, PlayCircle, Download, FileText, 
-  Trash2, User, RefreshCw, Loader2, AlertCircle, FileCheck
+  Trash2, User, Users, RefreshCw, Loader2, AlertCircle, FileCheck, CheckCircle
 } from "lucide-react";
 import { format } from "date-fns";
 
