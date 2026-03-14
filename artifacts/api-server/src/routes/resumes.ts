@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import { resumesTable, jobsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { extractTextFromBuffer, parseCandidateInfo } from "../lib/azure.js";
+import { extractTextFromBuffer, parseCandidateInfo, evaluateAgainstJob, MIN_READABLE_TEXT_LENGTH } from "../lib/azure.js";
 
 const router: IRouter = Router();
 
@@ -12,7 +12,11 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 20 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"];
+    const allowed = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -53,7 +57,6 @@ router.post("/resumes/upload", upload.array("files"), async (req, res) => {
 
     for (const file of files) {
       const id = randomUUID();
-      
       const mimeMap: Record<string, string> = {
         "application/pdf": "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -71,7 +74,6 @@ router.post("/resumes/upload", upload.array("files"), async (req, res) => {
       });
 
       resumeIds.push(id);
-
       processResumeAsync(id, file.buffer, mimeType, job.description, job.requiredSkills ?? [], job.experienceRequired ?? undefined, job.educationRequired ?? undefined);
     }
 
@@ -105,9 +107,19 @@ async function processResumeAsync(
       extractedText = await extractTextFromBuffer(buffer, mimeType);
     }
 
-    const candidate = await parseCandidateInfo(extractedText);
+    // Guard: unreadable / blank resume
+    const cleanedText = extractedText.trim().replace(/\s+/g, " ");
+    if (cleanedText.length < MIN_READABLE_TEXT_LENGTH) {
+      console.warn(`Resume ${resumeId} has insufficient text (${cleanedText.length} chars) — marking unreadable`);
+      await db.update(resumesTable).set({
+        status: "unreadable",
+        extractedText: extractedText || "(no text extracted)",
+        aiSummary: "This resume could not be read. The file may be image-based, password-protected, or otherwise unreadable by the AI.",
+      }).where(eq(resumesTable.id, resumeId));
+      return;
+    }
 
-    const { evaluateAgainstJob } = await import("../lib/azure.js");
+    const candidate = await parseCandidateInfo(extractedText);
     const screening = await evaluateAgainstJob(extractedText, jobDescription, requiredSkills, experienceRequired, educationRequired);
 
     await db.update(resumesTable).set({

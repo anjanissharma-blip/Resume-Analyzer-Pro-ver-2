@@ -1,161 +1,182 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
-import { useCreateJobMutation } from "@/hooks/use-jobs";
+import { useState, useEffect } from "react";
+import { useLocation, useParams } from "wouter";
+import { useCreateJobMutation, useUpdateJobMutation, useJobData } from "@/hooks/use-jobs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowLeft, Save, Pencil, Plus } from "lucide-react";
 import { Link } from "wouter";
 
+interface FormState {
+  jobRefNumber: string;
+  title: string;
+  department: string;
+  description: string;
+  skillsInput: string;
+  experienceRequired: string;
+  educationRequired: string;
+}
+
+const empty: FormState = {
+  jobRefNumber: "", title: "", department: "", description: "",
+  skillsInput: "", experienceRequired: "", educationRequired: "",
+};
+
 export function CreateJob() {
+  const { jobId } = useParams<{ jobId?: string }>();
+  const isEditing = !!jobId;
   const [, setLocation] = useLocation();
+  const [form, setForm] = useState<FormState>(empty);
+
+  const { data: existingJob, isLoading: loadingJob } = useJobData(jobId ?? "");
   const createMutation = useCreateJobMutation();
-  
-  const [formData, setFormData] = useState({
-    jobRefNumber: "",
-    title: "",
-    department: "",
-    description: "",
-    skillsInput: "",
-    experienceRequired: "",
-    educationRequired: ""
-  });
+  const updateMutation = useUpdateJobMutation(jobId ?? "");
+
+  useEffect(() => {
+    if (existingJob && isEditing) {
+      setForm({
+        jobRefNumber: existingJob.jobRefNumber ?? "",
+        title: existingJob.title ?? "",
+        department: existingJob.department ?? "",
+        description: existingJob.description ?? "",
+        skillsInput: (existingJob.requiredSkills ?? []).join(", "),
+        experienceRequired: existingJob.experienceRequired ?? "",
+        educationRequired: existingJob.educationRequired ?? "",
+      });
+    }
+  }, [existingJob, isEditing]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const requiredSkills = formData.skillsInput
-      .split(",")
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
+    const requiredSkills = form.skillsInput.split(",").map(s => s.trim()).filter(Boolean);
+    const payload = {
+      jobRefNumber: form.jobRefNumber,
+      title: form.title,
+      department: form.department,
+      description: form.description,
+      requiredSkills,
+      experienceRequired: form.experienceRequired,
+      educationRequired: form.educationRequired,
+    };
 
-    createMutation.mutate({
-      data: {
-        jobRefNumber: formData.jobRefNumber,
-        title: formData.title,
-        department: formData.department,
-        description: formData.description,
-        requiredSkills,
-        experienceRequired: formData.experienceRequired,
-        educationRequired: formData.educationRequired
-      }
-    }, {
-      onSuccess: () => setLocation("/jobs")
-    });
+    if (isEditing) {
+      updateMutation.mutate(payload as Parameters<typeof updateMutation.mutate>[0], {
+        onSuccess: () => setLocation(`/jobs/${jobId}`),
+      });
+    } else {
+      createMutation.mutate({ data: payload }, {
+        onSuccess: () => setLocation("/jobs"),
+      });
+    }
   };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  if (isEditing && loadingJob) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Skeleton className="h-8 w-48 rounded-lg" />
+        <Skeleton className="h-[60vh] rounded-2xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
-      <Link href="/jobs" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-        <ArrowLeft size={16} className="mr-2" /> Back to Jobs
+      <Link href={isEditing ? `/jobs/${jobId}` : "/jobs"} className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft size={16} className="mr-2" /> {isEditing ? "Back to Job" : "Back to Jobs"}
       </Link>
-      
+
       <div>
-        <h1 className="text-3xl font-display font-bold text-foreground">Create New Job Reference</h1>
-        <p className="text-muted-foreground mt-1">Define the role requirements for the AI to screen against.</p>
+        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+          {isEditing ? <><Pencil size={26} className="text-primary" /> Edit Job Profile</> : <><Plus size={26} className="text-primary" /> Create Job Profile</>}
+        </h1>
+        <p className="text-muted-foreground mt-1">
+          {isEditing ? "Update the role requirements — screening will use the latest description." : "Define the role requirements for the AI to screen candidates against."}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="p-6 sm:p-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Job Reference Number <span className="text-destructive">*</span></label>
-              <input 
-                required
+            <Field label="Job Reference Number" required>
+              <input
                 name="jobRefNumber"
-                value={formData.jobRefNumber}
+                value={form.jobRefNumber}
                 onChange={handleChange}
-                placeholder="e.g. REQ-2024-001"
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Job Title <span className="text-destructive">*</span></label>
-              <input 
                 required
-                name="title"
-                value={formData.title}
-                onChange={handleChange}
-                placeholder="e.g. Senior Frontend Engineer"
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                disabled={isEditing}
+                placeholder="e.g. REQ-2024-001"
+                className="field-input disabled:opacity-60 disabled:cursor-not-allowed"
               />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Department</label>
-              <input 
-                name="department"
-                value={formData.department}
-                onChange={handleChange}
-                placeholder="e.g. Engineering"
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              />
-            </div>
+              {isEditing && <p className="text-xs text-muted-foreground mt-1">Reference number cannot be changed after creation.</p>}
+            </Field>
+
+            <Field label="Job Title" required>
+              <input name="title" value={form.title} onChange={handleChange} required placeholder="e.g. Senior Finance Controller" className="field-input" />
+            </Field>
+
+            <Field label="Department">
+              <input name="department" value={form.department} onChange={handleChange} placeholder="e.g. Finance" className="field-input" />
+            </Field>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Job Description <span className="text-destructive">*</span></label>
-            <textarea 
-              required
+          <Field label="Job Description" required hint="The AI uses this full description to evaluate candidates. Be as detailed as possible.">
+            <textarea
               name="description"
-              value={formData.description}
+              value={form.description}
               onChange={handleChange}
-              rows={6}
-              placeholder="Paste the full job description here. The AI will use this to evaluate candidates."
-              className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-y"
+              required
+              rows={8}
+              placeholder="Paste the full job description here, including responsibilities, requirements, and context…"
+              className="field-input resize-y"
             />
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Required Skills</label>
-            <input 
+          <Field label="Required Skills" hint="Comma-separated list. The AI will specifically check resumes against these.">
+            <input
               name="skillsInput"
-              value={formData.skillsInput}
+              value={form.skillsInput}
               onChange={handleChange}
-              placeholder="React, TypeScript, Next.js, CSS (comma separated)"
-              className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              placeholder="e.g. Financial Reporting, IFRS, Excel, SAP, FP&A"
+              className="field-input"
             />
-            <p className="text-xs text-muted-foreground">The AI will specifically check resumes against these skills.</p>
-          </div>
+          </Field>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Experience Required</label>
-              <input 
-                name="experienceRequired"
-                value={formData.experienceRequired}
-                onChange={handleChange}
-                placeholder="e.g. 5+ years in frontend development"
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground">Education Required</label>
-              <input 
-                name="educationRequired"
-                value={formData.educationRequired}
-                onChange={handleChange}
-                placeholder="e.g. BS in Computer Science"
-                className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              />
-            </div>
+            <Field label="Experience Required">
+              <input name="experienceRequired" value={form.experienceRequired} onChange={handleChange} placeholder="e.g. 8+ years in senior finance roles" className="field-input" />
+            </Field>
+            <Field label="Education Required">
+              <input name="educationRequired" value={form.educationRequired} onChange={handleChange} placeholder="e.g. CA / MBA Finance / CFA" className="field-input" />
+            </Field>
           </div>
         </div>
-        
-        <div className="p-6 bg-slate-50 border-t border-border flex justify-end gap-4">
-          <Link href="/jobs">
-            <Button type="button" variant="outline" className="px-6 rounded-xl h-11">Cancel</Button>
+
+        <div className="p-6 bg-slate-50 border-t border-border flex justify-end gap-3">
+          <Link href={isEditing ? `/jobs/${jobId}` : "/jobs"}>
+            <Button type="button" variant="outline" className="h-11 px-6 rounded-xl" disabled={isPending}>Cancel</Button>
           </Link>
-          <Button 
-            type="submit" 
-            disabled={createMutation.isPending}
-            className="bg-primary hover:bg-primary/90 text-white px-8 rounded-xl h-11 shadow-lg shadow-primary/20 transition-all"
-          >
-            {createMutation.isPending ? "Saving..." : <><Save size={18} className="mr-2" /> Create Job Reference</>}
+          <Button type="submit" disabled={isPending} className="bg-primary hover:bg-primary/90 text-white h-11 px-8 rounded-xl shadow-lg shadow-primary/20">
+            {isPending ? "Saving…" : <><Save size={17} className="mr-2" />{isEditing ? "Save Changes" : "Create Job Profile"}</>}
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-semibold text-foreground">
+        {label} {required && <span className="text-destructive">*</span>}
+      </label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

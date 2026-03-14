@@ -25,6 +25,9 @@ export function getOpenAIClient() {
 
 export { deploymentName };
 
+/** Minimum characters of extracted text to attempt AI evaluation */
+export const MIN_READABLE_TEXT_LENGTH = 150;
+
 export async function extractTextFromBuffer(buffer: Buffer, mimeType: string): Promise<string> {
   try {
     const client = getDocumentClient();
@@ -37,6 +40,27 @@ export async function extractTextFromBuffer(buffer: Buffer, mimeType: string): P
   } catch (err) {
     console.error("Document Intelligence error:", err);
     throw new Error(`Failed to extract text: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function safeParseJSON(raw: string): Record<string, unknown> | null {
+  // Strip markdown code fences
+  let cleaned = raw
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  // Find first { ... } block
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    cleaned = cleaned.slice(start, end + 1);
+  }
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
   }
 }
 
@@ -61,43 +85,53 @@ export interface ScreeningEvaluation {
 
 export async function parseCandidateInfo(resumeText: string): Promise<ParsedCandidate> {
   const client = getOpenAIClient();
-  const prompt = `Extract structured information from the following resume text. Return a JSON object with these fields:
-- name: full name of candidate (string or null)
+
+  const prompt = `Extract structured information from the following resume. Return ONLY a valid JSON object — no markdown, no explanation, no code fences.
+
+Fields to extract:
+- name: full name (string or null)
 - email: email address (string or null)
 - phone: phone number (string or null)
-- address: address/location (string or null)
-- skills: array of technical and soft skills found
-- experience: array of work experiences, each with {title, company, duration, description}
-- education: array of education entries, each with {degree, institution, year}
+- address: city/country/location (string or null)
+- skills: array of ALL skills mentioned — technical, domain, tools, soft skills
+- experience: array of work entries, each: {title, company, duration, description}
+- education: array of education entries, each: {degree, institution, year}
 
-Resume text:
+Resume:
 ${resumeText.substring(0, 8000)}
 
-Respond with ONLY valid JSON, no markdown, no explanation.`;
+Return ONLY the JSON object:`;
 
   const response = await client.chat.completions.create({
     model: deploymentName,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.1,
+    messages: [
+      {
+        role: "system",
+        content: "You are a precise data extraction assistant. Always output valid JSON only. Never add markdown or commentary.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0,
     max_tokens: 2000,
   });
 
-  const content = response.choices[0]?.message?.content ?? "{}";
-  try {
-    const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-    return {
-      name: parsed.name ?? undefined,
-      email: parsed.email ?? undefined,
-      phone: parsed.phone ?? undefined,
-      address: parsed.address ?? undefined,
-      skills: Array.isArray(parsed.skills) ? parsed.skills : [],
-      experience: Array.isArray(parsed.experience) ? parsed.experience : [],
-      education: Array.isArray(parsed.education) ? parsed.education : [],
-    };
-  } catch {
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  const parsed = safeParseJSON(raw);
+
+  if (!parsed) {
+    console.warn("parseCandidateInfo: Failed to parse JSON response:", raw.substring(0, 200));
     return { skills: [], experience: [], education: [] };
   }
+
+  return {
+    name: typeof parsed.name === "string" ? parsed.name : undefined,
+    email: typeof parsed.email === "string" ? parsed.email : undefined,
+    phone: typeof parsed.phone === "string" ? parsed.phone : undefined,
+    address: typeof parsed.address === "string" ? parsed.address : undefined,
+    skills: Array.isArray(parsed.skills) ? (parsed.skills as string[]) : [],
+    experience: Array.isArray(parsed.experience) ? (parsed.experience as ParsedCandidate["experience"]) : [],
+    education: Array.isArray(parsed.education) ? (parsed.education as ParsedCandidate["education"]) : [],
+  };
 }
 
 export async function evaluateAgainstJob(
@@ -108,55 +142,91 @@ export async function evaluateAgainstJob(
   educationRequired?: string
 ): Promise<ScreeningEvaluation> {
   const client = getOpenAIClient();
-  const prompt = `You are an expert ATS (Applicant Tracking System) evaluator. Evaluate the following resume against the job description and return a JSON object.
 
-JOB DESCRIPTION:
+  const prompt = `You are a senior HR recruiter and ATS (Applicant Tracking System) expert. Evaluate the resume against the job requirements below and return a JSON object.
+
+═══════════════════ JOB REQUIREMENTS ═══════════════════
 ${jobDescription}
 
-REQUIRED SKILLS: ${requiredSkills.join(", ") || "Not specified"}
-EXPERIENCE REQUIRED: ${experienceRequired || "Not specified"}
-EDUCATION REQUIRED: ${educationRequired || "Not specified"}
+REQUIRED SKILLS: ${requiredSkills.length > 0 ? requiredSkills.join(", ") : "Not specified — evaluate general domain fit"}
+EXPERIENCE NEEDED: ${experienceRequired || "Not specified"}
+EDUCATION NEEDED: ${educationRequired || "Not specified"}
 
-RESUME:
+═══════════════════ CANDIDATE RESUME ═══════════════════
 ${resumeText.substring(0, 6000)}
 
-Return a JSON object with these fields:
-- atsScore: number 0-100 (how well resume passes ATS keyword matching)
-- suitabilityScore: number 0-100 (overall candidate suitability for the role)
-- matchingSkills: array of skills from the resume that match the job requirements
-- skillGaps: array of required skills missing from the resume
-- experienceMatch: string describing how well candidate's experience matches (e.g. "Strong match - 5 years relevant experience")
-- aiSummary: 2-3 paragraph professional assessment of the candidate for this role
+═══════════════════ SCORING INSTRUCTIONS ═══════════════════
+You MUST return non-zero scores for any resume that has readable career content.
 
-Respond with ONLY valid JSON, no markdown, no explanation.`;
+atsScore (integer 0-100) — Keyword and skills alignment:
+  80-100 = Excellent: 80%+ of required skills present, strong keyword overlap
+  60-79  = Good: 50-79% skills present, relevant domain experience
+  35-59  = Moderate: Some matching skills, relevant industry background
+  10-34  = Low: Few matching skills but resume is readable and has career content
+  0      = ONLY if the resume text is blank, gibberish, or completely unreadable
 
-  const response = await client.chat.completions.create({
-    model: deploymentName,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.2,
-    max_tokens: 2000,
-  });
+suitabilityScore (integer 0-100) — Overall candidate fit:
+  80-100 = Exceptional fit: Exceeds most requirements
+  60-79  = Strong fit: Meets core requirements well
+  35-59  = Partial fit: Relevant experience but with significant gaps
+  10-34  = Weak fit: Some relevant background but mostly misaligned
+  0      = ONLY if resume has no readable career content
 
-  const content = response.choices[0]?.message?.content ?? "{}";
+RULE: If the resume contains a real person's career history (even if not a perfect match), BOTH scores must be ≥ 10. A partial or career-changer resume with 10+ years of experience should score at minimum 30-40.
+
+Return ONLY this JSON (no markdown, no extra text):
+{
+  "atsScore": <integer 0-100>,
+  "suitabilityScore": <integer 0-100>,
+  "matchingSkills": ["skill1", "skill2", ...],
+  "skillGaps": ["missing_skill1", "missing_skill2", ...],
+  "experienceMatch": "<1-2 sentence honest assessment>",
+  "aiSummary": "<3 paragraph professional evaluation: candidate strengths, match quality, recommendation>"
+}`;
+
+  let raw = "";
   try {
-    const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+    const response = await client.chat.completions.create({
+      model: deploymentName,
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert ATS evaluator. Output ONLY valid JSON. Never use markdown. Always give non-zero scores for resumes with readable career content.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 2500,
+    });
+
+    raw = response.choices[0]?.message?.content ?? "{}";
+    console.log("AI evaluation raw response (first 300 chars):", raw.substring(0, 300));
+
+    const parsed = safeParseJSON(raw);
+
+    if (!parsed) {
+      console.error("evaluateAgainstJob: JSON parse failed. Raw:", raw.substring(0, 500));
+      throw new Error("AI returned invalid JSON");
+    }
+
+    const atsScore = typeof parsed.atsScore === "number" ? Math.round(Math.max(0, Math.min(100, parsed.atsScore))) : 0;
+    const suitabilityScore = typeof parsed.suitabilityScore === "number" ? Math.round(Math.max(0, Math.min(100, parsed.suitabilityScore))) : 0;
+
+    // Warn if both scores are 0 despite having text — this suggests a parsing or AI issue
+    if (atsScore === 0 && suitabilityScore === 0 && resumeText.length > MIN_READABLE_TEXT_LENGTH) {
+      console.warn(`evaluateAgainstJob: Both scores are 0 for resume with ${resumeText.length} chars of text. Possible AI issue.`);
+    }
+
     return {
-      atsScore: typeof parsed.atsScore === "number" ? Math.max(0, Math.min(100, parsed.atsScore)) : 0,
-      suitabilityScore: typeof parsed.suitabilityScore === "number" ? Math.max(0, Math.min(100, parsed.suitabilityScore)) : 0,
-      matchingSkills: Array.isArray(parsed.matchingSkills) ? parsed.matchingSkills : [],
-      skillGaps: Array.isArray(parsed.skillGaps) ? parsed.skillGaps : [],
-      experienceMatch: parsed.experienceMatch ?? "Unable to assess",
-      aiSummary: parsed.aiSummary ?? "No summary available",
+      atsScore,
+      suitabilityScore,
+      matchingSkills: Array.isArray(parsed.matchingSkills) ? (parsed.matchingSkills as string[]) : [],
+      skillGaps: Array.isArray(parsed.skillGaps) ? (parsed.skillGaps as string[]) : [],
+      experienceMatch: typeof parsed.experienceMatch === "string" ? parsed.experienceMatch : "Unable to assess",
+      aiSummary: typeof parsed.aiSummary === "string" ? parsed.aiSummary : "No summary available",
     };
-  } catch {
-    return {
-      atsScore: 0,
-      suitabilityScore: 0,
-      matchingSkills: [],
-      skillGaps: [],
-      experienceMatch: "Unable to assess",
-      aiSummary: "Evaluation failed",
-    };
+  } catch (err) {
+    console.error("evaluateAgainstJob error:", err, "| Raw:", raw.substring(0, 300));
+    throw err; // Let the caller handle by marking as failed
   }
 }

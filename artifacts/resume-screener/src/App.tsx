@@ -15,10 +15,7 @@ import { ReportsPage } from "@/pages/ReportsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
+    queries: { retry: 1, refetchOnWindowFocus: false },
   },
 });
 
@@ -29,6 +26,7 @@ function Router() {
         <Route path="/" component={Dashboard} />
         <Route path="/jobs" component={JobsList} />
         <Route path="/jobs/new" component={CreateJob} />
+        <Route path="/jobs/:jobId/edit" component={CreateJob} />
         <Route path="/jobs/:jobId" component={JobDetail} />
         <Route path="/resumes/:resumeId" component={ResumeDetail} />
         <Route path="/upload" component={UploadPage} />

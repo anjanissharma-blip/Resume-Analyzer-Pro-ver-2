@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useDropzone } from "react-dropzone";
-import { useJobData } from "@/hooks/use-jobs";
+import { useJobData, useUpdateJobStatusMutation } from "@/hooks/use-jobs";
 import { useJobResumes, useDeleteResumeMutation, useScreenResumeMutation, useScreenBatchMutation, useUploadResumesMutation } from "@/hooks/use-resumes";
 import { getDownloadBatchReportUrl, getDownloadResumeReportUrl } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   Trash2, User, Users, RefreshCw, Loader2, AlertCircle,
   FileCheck, CheckCircle, Trophy, Star, FileDown, LayoutList,
   X, File, ChevronRight, TrendingUp, AlertTriangle, ShieldCheck,
-  BarChart3
+  BarChart3, CheckCircle2, RotateCcw, Pencil, EyeOff
 } from "lucide-react";
 
 type Tab = "candidates" | "upload" | "reports";
@@ -30,9 +30,11 @@ export function JobDetail() {
   const deleteResume = useDeleteResumeMutation(jobId);
   const screenResume = useScreenResumeMutation(jobId);
   const uploadMutation = useUploadResumesMutation(jobId);
+  const statusMutation = useUpdateJobStatusMutation(jobId);
 
   const pendingCount = resumes.filter(r => r.status === "pending" || r.status === "processing").length;
   const screenedResumes = resumes.filter(r => r.status === "screened");
+  const unreadableResumes = resumes.filter(r => r.status === "unreadable");
 
   // Ranked resumes sorted by composite score
   const rankedResumes = [...screenedResumes].sort((a, b) => {
@@ -82,14 +84,42 @@ export function JobDetail() {
               ))}
             </div>
           </div>
-          <div className="flex gap-4 shrink-0 text-center">
-            <div className="bg-slate-50 border border-border rounded-xl px-5 py-3">
-              <div className="text-2xl font-bold text-foreground">{resumes.length}</div>
-              <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mt-0.5">Resumes</div>
+          <div className="flex flex-col gap-3 items-end shrink-0">
+            <div className="flex gap-2">
+              <Link href={`/jobs/${jobId}/edit`}>
+                <Button variant="outline" size="sm" className="h-9 gap-2">
+                  <Pencil size={14} /> Edit
+                </Button>
+              </Link>
+              {job.status !== "completed" ? (
+                <Button
+                  variant="outline" size="sm"
+                  className="h-9 gap-2 text-green-700 border-green-200 hover:bg-green-50"
+                  onClick={() => statusMutation.mutate("completed")}
+                  disabled={statusMutation.isPending}
+                >
+                  <CheckCircle2 size={14} /> Mark Complete
+                </Button>
+              ) : (
+                <Button
+                  variant="outline" size="sm"
+                  className="h-9 gap-2 text-blue-700 border-blue-200 hover:bg-blue-50"
+                  onClick={() => statusMutation.mutate("active")}
+                  disabled={statusMutation.isPending}
+                >
+                  <RotateCcw size={14} /> Re-activate
+                </Button>
+              )}
             </div>
-            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3">
-              <div className="text-2xl font-bold text-green-700">{screenedResumes.length}</div>
-              <div className="text-xs text-green-600 font-medium uppercase tracking-wide mt-0.5">Screened</div>
+            <div className="flex gap-3 text-center">
+              <div className="bg-slate-50 border border-border rounded-xl px-5 py-3">
+                <div className="text-2xl font-bold text-foreground">{resumes.length}</div>
+                <div className="text-xs text-muted-foreground font-medium uppercase tracking-wide mt-0.5">Resumes</div>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-3">
+                <div className="text-2xl font-bold text-green-700">{screenedResumes.length}</div>
+                <div className="text-xs text-green-600 font-medium uppercase tracking-wide mt-0.5">Screened</div>
+              </div>
             </div>
           </div>
         </div>
@@ -172,7 +202,8 @@ function CandidatesTab({ resumes, rankedResumes, resumesLoading, jobId, screenRe
   onUploadClick: () => void;
   navigate: (path: string) => void;
 }) {
-  const pendingResumes = resumes.filter(r => r.status !== "screened");
+  const pendingResumes = resumes.filter(r => r.status !== "screened" && r.status !== "unreadable");
+  const unreadableResumes = resumes.filter(r => r.status === "unreadable");
 
   if (resumesLoading) {
     return <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl" />)}</div>;
@@ -268,6 +299,42 @@ function CandidatesTab({ resumes, rankedResumes, resumesLoading, jobId, screenRe
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unreadable resumes */}
+      {unreadableResumes.length > 0 && (
+        <div>
+          <h2 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2 text-amber-700">
+            <EyeOff size={18} className="text-amber-500" /> Unreadable Resumes ({unreadableResumes.length})
+          </h2>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-2">
+            <p className="text-sm text-amber-800">These files could not be read by the AI — they may be image-based PDFs, password-protected, or have no extractable text. Please re-upload a text-based version.</p>
+          </div>
+          <div className="space-y-2">
+            {unreadableResumes.map(resume => (
+              <div key={resume.id} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5 group">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                    <EyeOff size={15} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-amber-900 text-sm">{resume.fileName}</div>
+                    <div className="text-xs text-amber-700">Uploaded {new Date(resume.createdAt).toLocaleDateString()} — could not extract text</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full">Unreadable</span>
+                  <button
+                    className="h-7 w-7 flex items-center justify-center rounded-md border border-amber-200 text-amber-500 hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                    onClick={() => { if (confirm("Delete this resume?")) deleteResume.mutate({ resumeId: resume.id }); }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

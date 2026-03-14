@@ -9,7 +9,6 @@ const router: IRouter = Router();
 router.get("/jobs", async (_req, res) => {
   try {
     const jobs = await db.select().from(jobsTable).orderBy(jobsTable.createdAt);
-    
     const jobsWithCount = await Promise.all(
       jobs.map(async (job) => {
         const result = await db.execute(
@@ -25,7 +24,6 @@ router.get("/jobs", async (_req, res) => {
         };
       })
     );
-    
     res.json(jobsWithCount);
   } catch (err) {
     console.error(err);
@@ -36,12 +34,10 @@ router.get("/jobs", async (_req, res) => {
 router.post("/jobs", async (req, res) => {
   try {
     const { jobRefNumber, title, department, description, requiredSkills, experienceRequired, educationRequired } = req.body;
-    
     if (!jobRefNumber || !title || !description) {
       res.status(400).json({ error: "jobRefNumber, title, and description are required" });
       return;
     }
-
     const id = randomUUID();
     const [job] = await db.insert(jobsTable).values({
       id,
@@ -54,7 +50,6 @@ router.post("/jobs", async (req, res) => {
       educationRequired: educationRequired ?? null,
       status: "active",
     }).returning();
-    
     res.status(201).json({
       ...job,
       requiredSkills: job.requiredSkills ?? [],
@@ -76,12 +71,10 @@ router.get("/jobs/:jobId", async (req, res) => {
   try {
     const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, req.params.jobId));
     if (!job) { res.status(404).json({ error: "Job not found" }); return; }
-    
     const result = await db.execute(
       sql`SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'screened' THEN 1 END) as screened FROM resumes WHERE job_id = ${job.id}`
     );
     const row = (result.rows[0] as { total: string; screened: string }) ?? { total: "0", screened: "0" };
-    
     res.json({
       ...job,
       requiredSkills: job.requiredSkills ?? [],
@@ -92,6 +85,58 @@ router.get("/jobs/:jobId", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch job" });
+  }
+});
+
+// Update (edit) a job profile
+router.put("/jobs/:jobId", async (req, res) => {
+  try {
+    const [existing] = await db.select().from(jobsTable).where(eq(jobsTable.id, req.params.jobId));
+    if (!existing) { res.status(404).json({ error: "Job not found" }); return; }
+
+    const { title, department, description, requiredSkills, experienceRequired, educationRequired } = req.body;
+
+    const [updated] = await db.update(jobsTable).set({
+      title: title ?? existing.title,
+      department: department ?? existing.department,
+      description: description ?? existing.description,
+      requiredSkills: requiredSkills ?? existing.requiredSkills,
+      experienceRequired: experienceRequired ?? existing.experienceRequired,
+      educationRequired: educationRequired ?? existing.educationRequired,
+    }).where(eq(jobsTable.id, req.params.jobId)).returning();
+
+    res.json({
+      ...updated,
+      requiredSkills: updated.requiredSkills ?? [],
+      createdAt: updated.createdAt.toISOString(),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update job" });
+  }
+});
+
+// Mark a job as completed or re-activate it
+router.patch("/jobs/:jobId/status", async (req, res) => {
+  try {
+    const [existing] = await db.select().from(jobsTable).where(eq(jobsTable.id, req.params.jobId));
+    if (!existing) { res.status(404).json({ error: "Job not found" }); return; }
+
+    const { status } = req.body;
+    if (!["active", "completed"].includes(status)) {
+      res.status(400).json({ error: "Status must be 'active' or 'completed'" });
+      return;
+    }
+
+    const [updated] = await db.update(jobsTable)
+      .set({ status })
+      .where(eq(jobsTable.id, req.params.jobId))
+      .returning();
+
+    res.json({ ...updated, requiredSkills: updated.requiredSkills ?? [], createdAt: updated.createdAt.toISOString() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update job status" });
   }
 });
 
