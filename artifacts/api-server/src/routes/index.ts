@@ -4,6 +4,7 @@ import jobsRouter from "./jobs.js";
 import resumesRouter from "./resumes.js";
 import screeningRouter from "./screening.js";
 import reportsRouter from "./reports.js";
+import jdUpload from "./jdUpload";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(jobsRouter);
 router.use(resumesRouter);
 router.use(screeningRouter);
 router.use(reportsRouter);
+router.use(jdUpload);
 
 export default router;
