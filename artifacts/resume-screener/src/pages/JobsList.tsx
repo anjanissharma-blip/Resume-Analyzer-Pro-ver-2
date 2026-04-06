@@ -5,7 +5,7 @@ import {
   useJobsData, useDeleteJobMutation, useUpdateJobStatusMutation,
   useCreateJobMutation, useUpdateJobMutation
 } from "@/hooks/use-jobs";
-import { useJobResumes, useUploadResumesMutation, useScreenBatchMutation } from "@/hooks/use-resumes";
+import { useJobResumes, useUploadResumesMutation, useScreenBatchMutation, useRescreenAllMutation } from "@/hooks/use-resumes";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,10 @@ export function JobsList() {
   // Which job card has the upload zone expanded
   const [uploadExpandedJob, setUploadExpandedJob] = useState<string | null>(null);
 
+  // Re-evaluate dialog: holds job id after a successful edit save
+  const [rescreenJobId, setRescreenJobId] = useState<string | null>(null);
+  const rescreenMutation = useRescreenAllMutation(rescreenJobId ?? "");
+
   const editingJob = typeof panelMode === "string" && panelMode !== "new"
     ? jobs.find(j => j.id === panelMode)
     : undefined;
@@ -98,7 +102,16 @@ export function JobsList() {
     if (panelMode === "new") {
       createMutation.mutate({ data: payload }, { onSuccess: closePanel });
     } else {
-      updateMutation.mutate(payload as Parameters<typeof updateMutation.mutate>[0], { onSuccess: closePanel });
+      const editedJobId = panelMode as string;
+      updateMutation.mutate(payload as Parameters<typeof updateMutation.mutate>[0], {
+        onSuccess: () => {
+          closePanel();
+          const job = jobs.find(j => j.id === editedJobId);
+          if ((job?.screenedCount ?? 0) > 0) {
+            setRescreenJobId(editedJobId);
+          }
+        }
+      });
     }
   };
 
@@ -368,6 +381,35 @@ export function JobsList() {
               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete Permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Re-evaluate dialog — shown after editing a job that already has screened resumes */}
+      <AlertDialog open={!!rescreenJobId} onOpenChange={open => !open && setRescreenJobId(null)}>
+        <AlertDialogContent className="rounded-2xl max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RotateCcw size={18} className="text-primary" />
+              Re-evaluate screened resumes?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The job profile has been updated. Would you like to re-evaluate all previously screened resumes against the new requirements? This will re-run AI scoring for every resume on this profile.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRescreenJobId(null)}>Skip</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary hover:bg-primary/90 text-white"
+              onClick={() => {
+                if (rescreenJobId) {
+                  rescreenMutation.mutate(rescreenJobId);
+                }
+                setRescreenJobId(null);
+              }}
+            >
+              Re-evaluate Resumes
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

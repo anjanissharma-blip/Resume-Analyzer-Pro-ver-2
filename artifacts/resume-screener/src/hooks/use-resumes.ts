@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { 
   useListResumesForJob, 
   useGetResume, 
@@ -132,5 +132,32 @@ export function useScreenBatchMutation(jobId: string) {
         });
       }
     }
+  });
+}
+
+export function useRescreenAllMutation(jobId: string) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (jid: string) => {
+      const res = await fetch(`/api/screening/rescreen-all/${jid}`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<{ total: number; message: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: getListResumesForJobQueryKey(jobId) });
+      toast({
+        title: "Re-evaluation started",
+        description: data.message || `${data.total} resume(s) queued.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Re-evaluation failed",
+        description: err instanceof Error ? err.message : "Could not start re-evaluation.",
+        variant: "destructive",
+      });
+    },
   });
 }

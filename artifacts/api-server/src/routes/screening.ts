@@ -122,4 +122,46 @@ router.post("/screening/batch/:jobId", async (req, res) => {
   }
 });
 
+router.post("/screening/rescreen-all/:jobId", async (req, res) => {
+  try {
+    const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, req.params.jobId));
+    if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+
+    const allResumes = await db.select().from(resumesTable).where(
+      eq(resumesTable.jobId, req.params.jobId)
+    );
+
+    const rescreenable = allResumes.filter(r => r.status !== "unreadable" && r.status !== "processing");
+
+    if (rescreenable.length === 0) {
+      res.json({ jobId: job.id, total: 0, message: "No resumes to re-evaluate" });
+      return;
+    }
+
+    for (const resume of rescreenable) {
+      await db.update(resumesTable).set({ status: "pending" }).where(eq(resumesTable.id, resume.id));
+    }
+
+    res.json({
+      jobId: job.id,
+      total: rescreenable.length,
+      message: `${rescreenable.length} resume(s) queued for re-evaluation`,
+    });
+
+    (async () => {
+      for (const resume of rescreenable) {
+        try {
+          await screenOneResume(resume.id, req.params.jobId);
+        } catch (err) {
+          console.error(`Re-screen: failed to screen resume ${resume.id}:`, err);
+          await db.update(resumesTable).set({ status: "failed" }).where(eq(resumesTable.id, resume.id));
+        }
+      }
+    })();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Re-evaluation failed" });
+  }
+});
+
 export default router;
