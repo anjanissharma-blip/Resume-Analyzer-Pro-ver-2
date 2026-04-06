@@ -354,10 +354,10 @@ function renderCandidate(doc: jsPDF, data: ReportData, logo: string | null): voi
   f(doc, C.blue);   doc.rect(0, HDR, PW, 2.2, "F");
 
   // ── "UTTARAYAN SCAN" centred heading ──────────────────────────────
-  // Pass 1: thick kumkum-red stroke (creates the outline border)
+  // Pass 1: thick blue stroke (creates the outline border)
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  s(doc, KUMKUM); lw(doc, 1.0);
+  s(doc, C.blue); lw(doc, 1.0);
   doc.text("UTTARAYAN SCAN", PW / 2, 9.5,
     { align: "center", renderingMode: "stroke" });
   // Pass 2: white fill drawn on top (fills the letter interiors)
