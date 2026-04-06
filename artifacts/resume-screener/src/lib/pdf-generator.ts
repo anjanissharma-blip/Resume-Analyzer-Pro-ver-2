@@ -344,37 +344,47 @@ function renderCandidate(doc: jsPDF, data: ReportData, logo: string | null): voi
 
   /* ══════════════════════════════
      1.  HEADER  (orange band)
-     "UTTARAYAN SCAN" label sits above the candidate name.
+     "UTTARAYAN SCAN" is the centred report heading at the very top,
+     white fill + kumkum-red outline, same size as candidate name.
   ══════════════════════════════ */
-  const HDR = 38;
+  const HDR = 48;
+  const KUMKUM: C3 = [176, 36, 36];
+
   f(doc, C.orange); doc.rect(0, 0, PW, HDR, "F");
   f(doc, C.blue);   doc.rect(0, HDR, PW, 2.2, "F");
 
-  if (logo) doc.addImage(logo, "JPEG", PW - MR - 22, 6, 22, 22, undefined, "FAST");
+  // ── "UTTARAYAN SCAN" centred heading ──────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(255, 255, 255);       // white fill
+  s(doc, KUMKUM); lw(doc, 0.65);         // kumkum-red stroke
+  doc.text("UTTARAYAN SCAN", PW / 2, 9.5,
+    { align: "center", renderingMode: "fillThenStroke" });
 
-  // Score badges left of logo
+  // thin separator below heading
+  s(doc, [255, 175, 110] as C3); lw(doc, 0.25);
+  doc.line(ML, 13, PW - MR, 13);
+
+  // ── Score badges + logo (shifted below heading) ───────────────────
+  if (logo) doc.addImage(logo, "JPEG", PW - MR - 22, 15.5, 22, 22, undefined, "FAST");
   const BW2 = 21, BH2 = 22, BGAP = 2;
   const b2x = PW - MR - 22 - BGAP - BW2;
   const b1x = b2x - BGAP - BW2;
-  scoreBadge(doc, b1x, 7, BW2, BH2, data.atsScore, "ATS SCORE", C.orange);
-  scoreBadge(doc, b2x, 7, BW2, BH2, composite,     "COMPOSITE", C.blue);
+  scoreBadge(doc, b1x, 15.5, BW2, BH2, data.atsScore, "ATS SCORE", C.orange);
+  scoreBadge(doc, b2x, 15.5, BW2, BH2, composite,     "COMPOSITE", C.blue);
 
-  // "UTTARAYAN SCAN" above name
+  // ── Candidate name / email / ref ──────────────────────────────────
   const nameMaxW = b1x - ML - 5;
-  ft(doc, "bold", 6.5, [255, 196, 140] as C3);
-  doc.text("UTTARAYAN SCAN", ML, 9.5);
-
-  // Candidate name
   ft(doc, "bold", 13, C.white);
   const nLines = doc.splitTextToSize(data.candidateName || "Unknown", nameMaxW) as string[];
-  doc.text(nLines[0], ML, 17);
+  doc.text(nLines[0], ML, 22.5);
 
-  // Email + ref
   ft(doc, "normal", 7.5, [255, 218, 175] as C3);
-  doc.text(data.candidateEmail || "", ML, 24.5);
+  doc.text(data.candidateEmail || "", ML, 30.5);
+
   ft(doc, "normal", 7, [255, 196, 140] as C3);
   const jLine = [data.jobRefNumber, data.jobTitle, data.jobDepartment].filter(Boolean).join("  ·  ");
-  doc.text(jLine.substring(0, 60), ML, 32.5);
+  doc.text(jLine.substring(0, 60), ML, 39.5);
 
   /* ══════════════════════════════
      2.  META ROW
@@ -613,11 +623,13 @@ function renderCandidate(doc: jsPDF, data: ReportData, logo: string | null): voi
     const ebw = hbw;
 
     const BULL_LH = 4.8;
+    const SUB_LH  = 4.0;   // extra height for company / institution sub-line
     const expItems = (data.experience || []).filter(e => e.title || e.company);
     const edus     = (data.education  || []).filter(e => e.degree || e.institution);
 
-    const histH = expItems.length * BULL_LH;
-    const eduH  = edus.length     * BULL_LH;
+    // Each entry = BULL_LH for the main line + SUB_LH if there is a company/institution sub-line
+    const histH = expItems.reduce((acc, e) => acc + BULL_LH + (e.company     ? SUB_LH : 0), 0);
+    const eduH  = edus.reduce    ((acc, e) => acc + BULL_LH + (e.institution ? SUB_LH : 0), 0);
     const rowH  = Math.max(histH, eduH, 12);
     const cardH = TH + PAD + rowH + PAD;
 
