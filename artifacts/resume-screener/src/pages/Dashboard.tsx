@@ -3,7 +3,7 @@ import { useCostStats } from "@/hooks/use-billing";
 import { Link } from "wouter";
 import {
   Briefcase, Users, CheckCircle, Plus, ArrowRight, FileText,
-  DollarSign, Zap, Clock, RotateCcw, TrendingUp, ChevronDown, ChevronUp
+  DollarSign, RotateCcw, TrendingUp, ChevronDown, ChevronUp, Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,10 +132,7 @@ function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostSta
         <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
           <DollarSign size={20} className="text-primary" /> Cost Counter
         </h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 font-medium">150% margin applied</span>
-          <Link href="/settings" className="text-xs text-primary hover:underline font-medium">Edit Rates</Link>
-        </div>
+        <Link href="/settings" className="text-xs text-primary hover:underline font-medium">Edit Rates</Link>
       </div>
 
       {isLoading ? (
@@ -147,43 +144,61 @@ function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostSta
           {/* Top summary tiles */}
           <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
             <CostTile
-              label="Total Billable Cost"
+              label="Total Billable"
               value={`$${fmt(costs.totalCost)}`}
-              sub={`Base: $${fmt(costs.baseOpenAICost + costs.baseDocCost)}`}
+              sub={`Across all actions`}
               icon={<TrendingUp size={18} className="text-primary" />}
               accent
             />
             <CostTile
-              label="API Credits Used"
-              value={costs.totalTokens.toLocaleString()}
-              sub="OpenAI tokens"
-              icon={<Zap size={18} className="text-amber-500" />}
-            />
-            <CostTile
-              label="Documents Processed"
-              value={costs.totalDocPages.toLocaleString()}
-              sub={`Doc Intelligence pages`}
+              label="Resumes Scanned"
+              value={costs.firstScanCount.toLocaleString()}
+              sub={`$${fmt(costs.scanCost)} @ $${costs.rates.rateScan}/ea`}
               icon={<FileText size={18} className="text-blue-500" />}
             />
             <CostTile
-              label="Compute Time"
-              value={`${(costs.computeHours * 60).toFixed(1)} min`}
-              sub={`~${costs.screenedCount} screenings × 30s`}
-              icon={<Clock size={18} className="text-slate-500" />}
+              label="Job Profiles"
+              value={costs.jobCount.toLocaleString()}
+              sub={`$${fmt(costs.jobCost)} @ $${costs.rates.rateJob}/ea`}
+              icon={<Briefcase size={18} className="text-indigo-500" />}
+            />
+            <CostTile
+              label="Reports Printed"
+              value={(costs.individualPrints + costs.consolidatedPrints).toLocaleString()}
+              sub={`$${fmt(costs.printCost)} total`}
+              icon={<Printer size={18} className="text-slate-500" />}
             />
           </div>
 
-          {/* Re-analysis line */}
-          {costs.reanalysisCost > 0 && (
+          {/* Re-scan line */}
+          {costs.rescanCount > 0 && (
             <div className="mx-5 mb-4 flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <div className="flex items-center gap-3">
                 <RotateCcw size={16} className="text-amber-600" />
                 <div>
-                  <div className="text-sm font-bold text-amber-900">Re-analysis Cost</div>
-                  <div className="text-xs text-amber-700">{costs.reanalysisDocPages} re-evaluated · {costs.reanalysisTokens.toLocaleString()} tokens</div>
+                  <div className="text-sm font-bold text-amber-900">Re-scan Cost</div>
+                  <div className="text-xs text-amber-700">{costs.rescanCount} re-evaluated @ ${costs.rates.rateRescan}/ea</div>
                 </div>
               </div>
-              <div className="text-lg font-bold text-amber-900">${fmt(costs.reanalysisCost)}</div>
+              <div className="text-lg font-bold text-amber-900">${fmt(costs.rescanCost)}</div>
+            </div>
+          )}
+
+          {/* Print breakdown */}
+          {(costs.individualPrints > 0 || costs.consolidatedPrints > 0) && (
+            <div className="mx-5 mb-4 flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <div className="flex items-center gap-3">
+                <Printer size={16} className="text-slate-500" />
+                <div>
+                  <div className="text-sm font-bold text-foreground">Print Breakdown</div>
+                  <div className="text-xs text-muted-foreground">
+                    {costs.individualPrints > 0 && <span>{costs.individualPrints} individual @ ${costs.rates.rateIndividual}</span>}
+                    {costs.individualPrints > 0 && costs.consolidatedPrints > 0 && <span className="mx-1">·</span>}
+                    {costs.consolidatedPrints > 0 && <span>{costs.consolidatedPrints} consolidated @ ${costs.rates.rateConsolidated}</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="text-base font-bold text-foreground">${fmt(costs.printCost)}</div>
             </div>
           )}
 
@@ -208,10 +223,8 @@ function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostSta
                           <span className="text-sm font-semibold text-foreground truncate">{job.jobTitle}</span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          {job.screenedCount} screened · {job.tokens.toLocaleString()} tokens
-                          {job.reanalysisCount > 0 && (
-                            <span className="ml-2 text-amber-600">· {job.reanalysisCount} re-analysed (+${fmt(job.reanalysisCost)})</span>
-                          )}
+                          {job.firstScanCount} scanned
+                          {job.rescanCount > 0 && <span className="ml-1 text-amber-600">· {job.rescanCount} re-scanned</span>}
                         </div>
                       </div>
                       <div className="text-base font-bold text-foreground ml-4 shrink-0">${fmt(job.cost)}</div>
@@ -223,7 +236,7 @@ function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostSta
           )}
         </>
       ) : (
-        <div className="p-8 text-center text-muted-foreground text-sm">No cost data available yet. Screen some resumes to see cost breakdown.</div>
+        <div className="p-8 text-center text-muted-foreground text-sm">No cost data available yet.</div>
       )}
     </motion.div>
   );

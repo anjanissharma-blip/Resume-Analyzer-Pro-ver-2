@@ -1,19 +1,39 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { billingSettingsTable, resumesTable, jobsTable } from "@workspace/db/schema";
-import { eq, sum, count, and } from "drizzle-orm";
+import { billingSettingsTable, resumesTable, jobsTable, reportPrintsTable } from "@workspace/db/schema";
+import { eq, count } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 const DEFAULTS: Record<string, string> = {
-  openai_cost_per_1k_tokens: "0.01",
-  doc_intel_cost_per_page: "0.0015",
+  rate_resume_scan:          "0.50",
+  rate_resume_rescan:        "0.50",
+  rate_consolidated_report:  "0.25",
+  rate_individual_report:    "0.10",
+  rate_job_creation:         "1.00",
+  settings_password:         "aces2026",
 };
 
 async function getSetting(key: string): Promise<string> {
   const [row] = await db.select().from(billingSettingsTable).where(eq(billingSettingsTable.key, key));
   return row?.value ?? DEFAULTS[key] ?? "0";
 }
+
+async function upsert(key: string, value: string) {
+  await db.insert(billingSettingsTable).values({ key, value })
+    .onConflictDoUpdate({ target: billingSettingsTable.key, set: { value } });
+}
+
+router.post("/billing/verify-password", async (req, res) => {
+  try {
+    const { password } = req.body as { password: string };
+    const stored = await getSetting("settings_password");
+    res.json({ ok: password === stored });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed" });
+  }
+});
 
 router.get("/billing/settings", async (_req, res) => {
   try {
@@ -29,14 +49,14 @@ router.get("/billing/settings", async (_req, res) => {
 
 router.post("/billing/settings", async (req, res) => {
   try {
-    const { openai_cost_per_1k_tokens, doc_intel_cost_per_page } = req.body as Record<string, string>;
-    const updates: { key: string; value: string }[] = [];
-    if (openai_cost_per_1k_tokens !== undefined) updates.push({ key: "openai_cost_per_1k_tokens", value: String(openai_cost_per_1k_tokens) });
-    if (doc_intel_cost_per_page !== undefined) updates.push({ key: "doc_intel_cost_per_page", value: String(doc_intel_cost_per_page) });
-
-    for (const { key, value } of updates) {
-      await db.insert(billingSettingsTable).values({ key, value })
-        .onConflictDoUpdate({ target: billingSettingsTable.key, set: { value } });
+    const body = req.body as Record<string, string>;
+    const allowed = [
+      "rate_resume_scan", "rate_resume_rescan",
+      "rate_consolidated_report", "rate_individual_report",
+      "rate_job_creation",
+    ];
+    for (const key of allowed) {
+      if (body[key] !== undefined) await upsert(key, String(body[key]));
     }
     res.json({ success: true });
   } catch (err) {
@@ -45,46 +65,63 @@ router.post("/billing/settings", async (req, res) => {
   }
 });
 
+router.post("/billing/track-print", async (req, res) => {
+  try {
+    const { type, jobId } = req.body as { type: "individual" | "consolidated"; jobId?: string };
+    if (type !== "individual" && type !== "consolidated") {
+      return res.status(400).json({ error: "Invalid type" });
+    }
+    await db.insert(reportPrintsTable).values({ type, jobId: jobId ?? null });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to track print" });
+  }
+});
+
 router.get("/billing/costs", async (_req, res) => {
   try {
-    const openaiRate = parseFloat(await getSetting("openai_cost_per_1k_tokens"));
-    const docIntelRate = parseFloat(await getSetting("doc_intel_cost_per_page"));
-    const MARGIN = 2.5; // 150% on top = 2.5×
+    const rateScan        = parseFloat(await getSetting("rate_resume_scan"));
+    const rateRescan      = parseFloat(await getSetting("rate_resume_rescan"));
+    const rateConsolidated = parseFloat(await getSetting("rate_consolidated_report"));
+    const rateIndividual  = parseFloat(await getSetting("rate_individual_report"));
+    const rateJob         = parseFloat(await getSetting("rate_job_creation"));
 
     const resumes = await db
-      .select({
-        jobId: resumesTable.jobId,
-        status: resumesTable.status,
-        totalTokens: resumesTable.totalTokens,
-        isReanalysis: resumesTable.isReanalysis,
-      })
+      .select({ jobId: resumesTable.jobId, status: resumesTable.status, isReanalysis: resumesTable.isReanalysis })
       .from(resumesTable);
 
-    const jobs = await db.select({ id: jobsTable.id, title: jobsTable.title, jobRefNumber: jobsTable.jobRefNumber }).from(jobsTable);
+    const jobs = await db
+      .select({ id: jobsTable.id, title: jobsTable.title, jobRefNumber: jobsTable.jobRefNumber })
+      .from(jobsTable);
     const jobMap = new Map(jobs.map(j => [j.id, j]));
 
     const screened = resumes.filter(r => r.status === "screened" || r.status === "unreadable");
+    const firstScans  = screened.filter(r => !r.isReanalysis);
+    const rescans     = screened.filter(r => r.isReanalysis);
 
-    const totalTokens = screened.reduce((s, r) => s + (r.totalTokens ?? 0), 0);
-    const totalDocPages = screened.length;
+    const scanCost     = firstScans.length * rateScan;
+    const rescanCost   = rescans.length * rateRescan;
+    const jobCost      = jobs.length * rateJob;
 
-    const baseOpenAICost = (totalTokens / 1000) * openaiRate;
-    const baseDocCost = totalDocPages * docIntelRate;
-    const baseCost = baseOpenAICost + baseDocCost;
-    const totalCost = baseCost * MARGIN;
+    const [printStats] = await db
+      .select({
+        type: reportPrintsTable.type,
+        cnt: count(),
+      })
+      .from(reportPrintsTable)
+      .groupBy(reportPrintsTable.type);
 
-    const reanalysisResumes = screened.filter(r => r.isReanalysis);
-    const reanalysisTokens = reanalysisResumes.reduce((s, r) => s + (r.totalTokens ?? 0), 0);
-    const reanalysisDocPages = reanalysisResumes.length;
-    const reanalysisBase = ((reanalysisTokens / 1000) * openaiRate) + (reanalysisDocPages * docIntelRate);
-    const reanalysisCost = reanalysisBase * MARGIN;
+    const allPrints = await db.select().from(reportPrintsTable);
+    const individualPrints = allPrints.filter(p => p.type === "individual").length;
+    const consolidatedPrints = allPrints.filter(p => p.type === "consolidated").length;
 
-    const computeHours = (screened.length * 30) / 3600;
+    const printCost = (individualPrints * rateIndividual) + (consolidatedPrints * rateConsolidated);
+    const totalCost = scanCost + rescanCost + jobCost + printCost;
 
     const perJobMap: Record<string, {
       jobId: string; jobTitle: string; jobRefNumber: string;
-      screenedCount: number; tokens: number; cost: number;
-      reanalysisCount: number; reanalysisCost: number;
+      firstScanCount: number; rescanCount: number; cost: number;
     }> = {};
 
     for (const r of screened) {
@@ -94,34 +131,39 @@ router.get("/billing/costs", async (_req, res) => {
           jobId: r.jobId,
           jobTitle: job?.title ?? "Unknown",
           jobRefNumber: job?.jobRefNumber ?? "-",
-          screenedCount: 0, tokens: 0, cost: 0,
-          reanalysisCount: 0, reanalysisCost: 0,
+          firstScanCount: 0, rescanCount: 0, cost: 0,
         };
       }
       const entry = perJobMap[r.jobId];
-      entry.screenedCount++;
-      entry.tokens += (r.totalTokens ?? 0);
-      const itemBase = ((r.totalTokens ?? 0) / 1000 * openaiRate) + docIntelRate;
-      entry.cost += itemBase * MARGIN;
       if (r.isReanalysis) {
-        entry.reanalysisCount++;
-        entry.reanalysisCost += itemBase * MARGIN;
+        entry.rescanCount++;
+        entry.cost += rateRescan;
+      } else {
+        entry.firstScanCount++;
+        entry.cost += rateScan;
       }
     }
 
+    for (const job of jobs) {
+      if (!perJobMap[job.id]) {
+        perJobMap[job.id] = {
+          jobId: job.id,
+          jobTitle: job.title,
+          jobRefNumber: job.jobRefNumber,
+          firstScanCount: 0, rescanCount: 0, cost: 0,
+        };
+      }
+      perJobMap[job.id].cost += rateJob;
+    }
+
     res.json({
-      totalTokens,
-      totalDocPages,
       totalCost,
-      baseOpenAICost,
-      baseDocCost,
-      reanalysisTokens,
-      reanalysisDocPages,
-      reanalysisCost,
-      computeHours,
-      screenedCount: screened.length,
-      margin: 150,
-      settings: { openaiRate, docIntelRate },
+      scanCost, rescanCost, jobCost, printCost,
+      firstScanCount: firstScans.length,
+      rescanCount: rescans.length,
+      jobCount: jobs.length,
+      individualPrints, consolidatedPrints,
+      rates: { rateScan, rateRescan, rateConsolidated, rateIndividual, rateJob },
       perJob: Object.values(perJobMap).sort((a, b) => b.cost - a.cost),
     });
   } catch (err) {

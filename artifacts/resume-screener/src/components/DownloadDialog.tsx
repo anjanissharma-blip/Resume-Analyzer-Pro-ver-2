@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FileText, FileDown, Loader2, Users, User } from "lucide-react";
 import { downloadResumeReport, getDownloadBatchReportUrl } from "@workspace/api-client-react";
 import { generateCandidatePDF, generateAllCandidatesPDF, type ReportData } from "@/lib/pdf-generator";
+import { trackPrint } from "@/hooks/use-billing";
 
 // ── Single Candidate Download Dialog ──
 interface SingleDownloadDialogProps {
@@ -13,9 +14,10 @@ interface SingleDownloadDialogProps {
   onOpenChange: (open: boolean) => void;
   resumeId: string;
   candidateName?: string;
+  jobId?: string;
 }
 
-export function SingleDownloadDialog({ open, onOpenChange, resumeId, candidateName }: SingleDownloadDialogProps) {
+export function SingleDownloadDialog({ open, onOpenChange, resumeId, candidateName, jobId }: SingleDownloadDialogProps) {
   const [loading, setLoading] = useState<"pdf" | "csv" | null>(null);
 
   const fetchReport = async (): Promise<ReportData> => {
@@ -47,6 +49,7 @@ export function SingleDownloadDialog({ open, onOpenChange, resumeId, candidateNa
     try {
       const report = await fetchReport();
       await generateCandidatePDF(report);
+      await trackPrint("individual", jobId);
       onOpenChange(false);
     } catch (e) {
       console.error("PDF generation failed", e);
@@ -177,6 +180,7 @@ export function BatchDownloadDialog({
         setProgress(Math.round(((i + 1) / resumeIds.length) * 100));
       }
       await generateAllCandidatesPDF(reports, jobTitle, jobRefNumber);
+      await trackPrint("consolidated", jobId);
       onOpenChange(false);
     } catch (e) {
       console.error("Batch PDF failed", e);

@@ -2,32 +2,38 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 export interface BillingSettings {
-  openai_cost_per_1k_tokens: string;
-  doc_intel_cost_per_page: string;
+  rate_resume_scan:         string;
+  rate_resume_rescan:       string;
+  rate_consolidated_report: string;
+  rate_individual_report:   string;
+  rate_job_creation:        string;
 }
 
 export interface CostStats {
-  totalTokens: number;
-  totalDocPages: number;
-  totalCost: number;
-  baseOpenAICost: number;
-  baseDocCost: number;
-  reanalysisTokens: number;
-  reanalysisDocPages: number;
-  reanalysisCost: number;
-  computeHours: number;
-  screenedCount: number;
-  margin: number;
-  settings: { openaiRate: number; docIntelRate: number };
+  totalCost:         number;
+  scanCost:          number;
+  rescanCost:        number;
+  jobCost:           number;
+  printCost:         number;
+  firstScanCount:    number;
+  rescanCount:       number;
+  jobCount:          number;
+  individualPrints:  number;
+  consolidatedPrints: number;
+  rates: {
+    rateScan:         number;
+    rateRescan:       number;
+    rateConsolidated: number;
+    rateIndividual:   number;
+    rateJob:          number;
+  };
   perJob: Array<{
     jobId: string;
     jobTitle: string;
     jobRefNumber: string;
-    screenedCount: number;
-    tokens: number;
-    cost: number;
-    reanalysisCount: number;
-    reanalysisCost: number;
+    firstScanCount: number;
+    rescanCount:    number;
+    cost:           number;
   }>;
 }
 
@@ -78,4 +84,16 @@ export function useCostStats() {
     },
     refetchInterval: 30000,
   });
+}
+
+export async function trackPrint(type: "individual" | "consolidated", jobId?: string) {
+  try {
+    await fetch(`${BASE}/billing/track-print`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, jobId }),
+    });
+  } catch {
+    // non-fatal
+  }
 }
