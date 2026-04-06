@@ -4,6 +4,7 @@ import { useDropzone } from "react-dropzone";
 import { useJobData, useUpdateJobStatusMutation } from "@/hooks/use-jobs";
 import { useJobResumes, useDeleteResumeMutation, useScreenResumeMutation, useScreenBatchMutation, useUploadResumesMutation } from "@/hooks/use-resumes";
 import { getDownloadBatchReportUrl, getDownloadResumeReportUrl } from "@workspace/api-client-react";
+import { BatchDownloadDialog } from "@/components/DownloadDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -532,7 +533,8 @@ function ReportsTab({ job, rankedResumes, allResumes, jobId, navigate }: {
   jobId: string;
   navigate: (path: string) => void;
 }) {
-  const handleBatchDownload = () => window.open(getDownloadBatchReportUrl(jobId), "_blank");
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const screenedIds = rankedResumes.map((r: { id: string }) => r.id);
   const handleIndividualDownload = (resumeId: string) => window.open(getDownloadResumeReportUrl(resumeId), "_blank");
 
   if (rankedResumes.length === 0) {
@@ -555,8 +557,8 @@ function ReportsTab({ job, rankedResumes, allResumes, jobId, navigate }: {
           <h2 className="font-bold text-foreground flex items-center gap-2"><FileDown size={18} className="text-primary" /> Batch Report</h2>
           <p className="text-sm text-muted-foreground mt-0.5">{rankedResumes.length} candidate{rankedResumes.length !== 1 ? "s" : ""} screened for <span className="font-semibold">{job.jobRefNumber}</span> — {job.title}</p>
         </div>
-        <Button onClick={handleBatchDownload} className="bg-primary hover:bg-primary/90 shrink-0">
-          <Download size={16} className="mr-2" /> Download CSV
+        <Button onClick={() => setBatchDialogOpen(true)} className="bg-primary hover:bg-primary/90 shrink-0">
+          <Download size={16} className="mr-2" /> Download Report
         </Button>
       </div>
 
@@ -650,6 +652,15 @@ function ReportsTab({ job, rankedResumes, allResumes, jobId, navigate }: {
           })}
         </div>
       </div>
+
+      <BatchDownloadDialog
+        open={batchDialogOpen}
+        onOpenChange={setBatchDialogOpen}
+        jobId={jobId}
+        jobTitle={job.title}
+        jobRefNumber={job.jobRefNumber}
+        resumeIds={screenedIds}
+      />
     </div>
   );
 }
