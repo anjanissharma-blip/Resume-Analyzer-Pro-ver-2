@@ -125,12 +125,11 @@ export function JobsList() {
             <h1 className="text-3xl font-bold text-foreground">Job Profiles</h1>
             <p className="text-muted-foreground mt-1">Manage postings, upload resumes, and screen candidates</p>
           </div>
-          <Button
-            onClick={openCreate}
-            className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 h-11 px-6"
-          >
-            <Plus className="mr-2 h-4 w-4" /> Create Profile
-          </Button>
+          <Link href="/jobs/new">
+            <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 h-11 px-6">
+              <Plus className="mr-2 h-4 w-4" /> Create Profile
+            </Button>
+          </Link>
         </div>
 
         {/* Search */}

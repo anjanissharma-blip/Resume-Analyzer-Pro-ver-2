@@ -161,7 +161,7 @@ export function UploadPage() {
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <PlayCircle size={17} className="text-primary" /> AI Screening
               </h2>
-              <p className="text-xs text-muted-foreground mt-1">Evaluate resumes with Azure OpenAI + Document Intelligence</p>
+              <p className="text-xs text-muted-foreground mt-1">Evaluate resumes with our AI</p>
             </div>
             <div className="p-5 space-y-4">
               {/* Stats */}
