@@ -121,6 +121,7 @@ async function processResumeAsync(
 
     const candidate = await parseCandidateInfo(extractedText);
     const screening = await evaluateAgainstJob(extractedText, jobDescription, requiredSkills, experienceRequired, educationRequired);
+    const totalTokens = (candidate.tokens ?? 0) + (screening.tokens ?? 0);
 
     await db.update(resumesTable).set({
       status: "screened",
@@ -139,6 +140,8 @@ async function processResumeAsync(
       experienceMatch: screening.experienceMatch,
       aiSummary: screening.aiSummary,
       screenedAt: new Date(),
+      totalTokens,
+      isReanalysis: false,
     }).where(eq(resumesTable.id, resumeId));
   } catch (err) {
     console.error(`Failed to process resume ${resumeId}:`, err);

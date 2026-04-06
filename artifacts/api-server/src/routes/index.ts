@@ -5,6 +5,7 @@ import resumesRouter from "./resumes.js";
 import screeningRouter from "./screening.js";
 import reportsRouter from "./reports.js";
 import jdUpload from "./jdUpload";
+import billingRouter from "./billing.js";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(resumesRouter);
 router.use(screeningRouter);
 router.use(reportsRouter);
 router.use(jdUpload);
+router.use(billingRouter);
 
 export default router;

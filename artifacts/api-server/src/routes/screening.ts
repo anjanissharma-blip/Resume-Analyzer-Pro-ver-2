@@ -6,7 +6,7 @@ import { extractTextFromBuffer, parseCandidateInfo, evaluateAgainstJob, MIN_READ
 
 const router: IRouter = Router();
 
-async function screenOneResume(resumeId: string, jobId?: string) {
+async function screenOneResume(resumeId: string, jobId?: string, isReanalysis = false) {
   const [resume] = await db.select().from(resumesTable).where(eq(resumesTable.id, resumeId));
   if (!resume) throw new Error("Resume not found");
 
@@ -48,6 +48,8 @@ async function screenOneResume(resumeId: string, jobId?: string) {
     job.educationRequired ?? undefined
   );
 
+  const totalTokens = (candidate.tokens ?? 0) + (screening.tokens ?? 0);
+
   await db.update(resumesTable).set({
     status: "screened",
     extractedText,
@@ -65,9 +67,11 @@ async function screenOneResume(resumeId: string, jobId?: string) {
     experienceMatch: screening.experienceMatch,
     aiSummary: screening.aiSummary,
     screenedAt: new Date(),
+    totalTokens,
+    isReanalysis,
   }).where(eq(resumesTable.id, resume.id));
 
-  return { status: "screened", resumeId: resume.id, ...screening };
+  return { status: "screened", resumeId: resume.id, ...screening, totalTokens };
 }
 
 router.post("/screening/:resumeId", async (req, res) => {
@@ -151,7 +155,7 @@ router.post("/screening/rescreen-all/:jobId", async (req, res) => {
     (async () => {
       for (const resume of rescreenable) {
         try {
-          await screenOneResume(resume.id, req.params.jobId);
+          await screenOneResume(resume.id, req.params.jobId, true);
         } catch (err) {
           console.error(`Re-screen: failed to screen resume ${resume.id}:`, err);
           await db.update(resumesTable).set({ status: "failed" }).where(eq(resumesTable.id, resume.id));

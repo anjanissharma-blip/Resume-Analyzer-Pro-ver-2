@@ -57,10 +57,18 @@ export function Sidebar() {
       </div>
 
       <div className="p-3 border-t border-sidebar-border shrink-0">
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 cursor-pointer transition-colors">
-          <Settings size={17} className="text-sidebar-foreground/40" />
+        <Link
+          href="/settings"
+          className={clsx(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+            location === "/settings"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+              : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          )}
+        >
+          <Settings size={17} className={location === "/settings" ? "text-primary" : "text-sidebar-foreground/40"} />
           Settings
-        </div>
+        </Link>
       </div>
     </aside>
   );

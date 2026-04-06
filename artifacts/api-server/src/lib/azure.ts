@@ -72,6 +72,7 @@ export interface ParsedCandidate {
   skills: string[];
   experience: Array<{ title?: string; company?: string; duration?: string; description?: string }>;
   education: Array<{ degree?: string; institution?: string; year?: string }>;
+  tokens?: number;
 }
 
 export interface ScreeningEvaluation {
@@ -81,6 +82,7 @@ export interface ScreeningEvaluation {
   skillGaps: string[];
   experienceMatch: string;
   aiSummary: string;
+  tokens?: number;
 }
 
 export async function parseCandidateInfo(resumeText: string): Promise<ParsedCandidate> {
@@ -116,11 +118,12 @@ Return ONLY the JSON object:`;
   });
 
   const raw = response.choices[0]?.message?.content ?? "{}";
+  const tokens = response.usage?.total_tokens ?? 0;
   const parsed = safeParseJSON(raw);
 
   if (!parsed) {
     console.warn("parseCandidateInfo: Failed to parse JSON response:", raw.substring(0, 200));
-    return { skills: [], experience: [], education: [] };
+    return { skills: [], experience: [], education: [], tokens };
   }
 
   return {
@@ -131,6 +134,7 @@ Return ONLY the JSON object:`;
     skills: Array.isArray(parsed.skills) ? (parsed.skills as string[]) : [],
     experience: Array.isArray(parsed.experience) ? (parsed.experience as ParsedCandidate["experience"]) : [],
     education: Array.isArray(parsed.education) ? (parsed.education as ParsedCandidate["education"]) : [],
+    tokens,
   };
 }
 
@@ -200,6 +204,7 @@ Return ONLY this JSON (no markdown, no extra text):
     });
 
     raw = response.choices[0]?.message?.content ?? "{}";
+    const tokens = response.usage?.total_tokens ?? 0;
     console.log("AI evaluation raw response (first 300 chars):", raw.substring(0, 300));
 
     const parsed = safeParseJSON(raw);
@@ -224,6 +229,7 @@ Return ONLY this JSON (no markdown, no extra text):
       skillGaps: Array.isArray(parsed.skillGaps) ? (parsed.skillGaps as string[]) : [],
       experienceMatch: typeof parsed.experienceMatch === "string" ? parsed.experienceMatch : "Unable to assess",
       aiSummary: typeof parsed.aiSummary === "string" ? parsed.aiSummary : "No summary available",
+      tokens,
     };
   } catch (err) {
     console.error("evaluateAgainstJob error:", err, "| Raw:", raw.substring(0, 300));

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, real, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, real, jsonb, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -25,6 +25,8 @@ export const resumesTable = pgTable("resumes", {
   aiSummary: text("ai_summary"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   screenedAt: timestamp("screened_at"),
+  totalTokens: integer("total_tokens").default(0),
+  isReanalysis: boolean("is_reanalysis").default(false),
 });
 
 export const insertResumeSchema = createInsertSchema(resumesTable).omit({

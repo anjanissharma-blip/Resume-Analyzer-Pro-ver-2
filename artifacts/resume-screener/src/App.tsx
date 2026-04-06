@@ -12,6 +12,7 @@ import { JobDetail } from "@/pages/JobDetail";
 import { ResumeDetail } from "@/pages/ResumeDetail";
 import { UploadPage } from "@/pages/UploadPage";
 import { ReportsPage } from "@/pages/ReportsPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function Router() {
         <Route path="/resumes/:resumeId" component={ResumeDetail} />
         <Route path="/upload" component={UploadPage} />
         <Route path="/reports" component={ReportsPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

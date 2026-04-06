@@ -1,12 +1,18 @@
 import { useJobsData } from "@/hooks/use-jobs";
+import { useCostStats } from "@/hooks/use-billing";
 import { Link } from "wouter";
-import { Briefcase, Users, CheckCircle, Plus, ArrowRight, FileText } from "lucide-react";
+import {
+  Briefcase, Users, CheckCircle, Plus, ArrowRight, FileText,
+  DollarSign, Zap, Clock, RotateCcw, TrendingUp, ChevronDown, ChevronUp
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
+import { useState } from "react";
 
 export function Dashboard() {
   const { data: jobs, isLoading } = useJobsData();
+  const { data: costs, isLoading: costsLoading } = useCostStats();
 
   const activeJobs = jobs?.filter(j => j.status !== "completed") ?? [];
   const totalJobs = activeJobs.length;
@@ -40,6 +46,9 @@ export function Dashboard() {
           <StatCard title="Resumes Screened" value={totalScreened} icon={<CheckCircle className="text-emerald-600" size={24} />} color="bg-emerald-50" delay={0.3} />
         </div>
       )}
+
+      {/* Cost Counter */}
+      <CostCounter costs={costs} isLoading={costsLoading} />
 
       <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden">
         <div className="p-6 border-b border-border flex items-center justify-between">
@@ -101,6 +110,133 @@ export function Dashboard() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function fmt(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostStats>["data"]; isLoading: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.35 }}
+      className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden"
+    >
+      <div className="p-5 border-b border-border flex items-center justify-between">
+        <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+          <DollarSign size={20} className="text-primary" /> Cost Counter
+        </h2>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 font-medium">150% margin applied</span>
+          <Link href="/settings" className="text-xs text-primary hover:underline font-medium">Edit Rates</Link>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      ) : costs ? (
+        <>
+          {/* Top summary tiles */}
+          <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <CostTile
+              label="Total Billable Cost"
+              value={`$${fmt(costs.totalCost)}`}
+              sub={`Base: $${fmt(costs.baseOpenAICost + costs.baseDocCost)}`}
+              icon={<TrendingUp size={18} className="text-primary" />}
+              accent
+            />
+            <CostTile
+              label="API Credits Used"
+              value={costs.totalTokens.toLocaleString()}
+              sub="OpenAI tokens"
+              icon={<Zap size={18} className="text-amber-500" />}
+            />
+            <CostTile
+              label="Documents Processed"
+              value={costs.totalDocPages.toLocaleString()}
+              sub={`Doc Intelligence pages`}
+              icon={<FileText size={18} className="text-blue-500" />}
+            />
+            <CostTile
+              label="Compute Time"
+              value={`${(costs.computeHours * 60).toFixed(1)} min`}
+              sub={`~${costs.screenedCount} screenings × 30s`}
+              icon={<Clock size={18} className="text-slate-500" />}
+            />
+          </div>
+
+          {/* Re-analysis line */}
+          {costs.reanalysisCost > 0 && (
+            <div className="mx-5 mb-4 flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="flex items-center gap-3">
+                <RotateCcw size={16} className="text-amber-600" />
+                <div>
+                  <div className="text-sm font-bold text-amber-900">Re-analysis Cost</div>
+                  <div className="text-xs text-amber-700">{costs.reanalysisDocPages} re-evaluated · {costs.reanalysisTokens.toLocaleString()} tokens</div>
+                </div>
+              </div>
+              <div className="text-lg font-bold text-amber-900">${fmt(costs.reanalysisCost)}</div>
+            </div>
+          )}
+
+          {/* Per-job breakdown (collapsible) */}
+          {costs.perJob.length > 0 && (
+            <div className="border-t border-border">
+              <button
+                onClick={() => setExpanded(e => !e)}
+                className="w-full px-5 py-3 flex items-center justify-between text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-slate-50 transition-colors"
+              >
+                <span>Cost Breakdown by Job Profile ({costs.perJob.length})</span>
+                {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {expanded && (
+                <div className="px-5 pb-4 space-y-2">
+                  {costs.perJob.map(job => (
+                    <div key={job.jobId} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold font-mono text-muted-foreground bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{job.jobRefNumber}</span>
+                          <span className="text-sm font-semibold text-foreground truncate">{job.jobTitle}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {job.screenedCount} screened · {job.tokens.toLocaleString()} tokens
+                          {job.reanalysisCount > 0 && (
+                            <span className="ml-2 text-amber-600">· {job.reanalysisCount} re-analysed (+${fmt(job.reanalysisCost)})</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-base font-bold text-foreground ml-4 shrink-0">${fmt(job.cost)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="p-8 text-center text-muted-foreground text-sm">No cost data available yet. Screen some resumes to see cost breakdown.</div>
+      )}
+    </motion.div>
+  );
+}
+
+function CostTile({ label, value, sub, icon, accent }: {
+  label: string; value: string; sub: string; icon: React.ReactNode; accent?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl p-4 border ${accent ? "bg-primary/5 border-primary/20" : "bg-slate-50 border-slate-200"}`}>
+      <div className="flex items-center gap-2 mb-2">{icon}<span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</span></div>
+      <div className={`text-xl font-bold ${accent ? "text-primary" : "text-foreground"}`}>{value}</div>
+      <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>
     </div>
   );
 }
