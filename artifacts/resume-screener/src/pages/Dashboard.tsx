@@ -20,7 +20,7 @@ export function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground mt-1 text-lg">RecruitAI — AI Resume Screening System</p>
+          <p className="text-muted-foreground mt-1 text-lg">Uttarayan Recruit — AI-Powered Candidate Screening</p>
         </div>
         <Link href="/jobs/new">
           <Button className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20 hover:shadow-xl transition-all w-full sm:w-auto text-base h-11">

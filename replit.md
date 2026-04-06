@@ -1,8 +1,8 @@
-# AI Resume Screening System (RecruitAI)
+# Uttarayan Recruit
 
 ## Overview
 
-A cloud-connected AI Resume Screening System that allows uploading, parsing, and evaluating resumes against job descriptions using Azure AI services. Built as a pnpm monorepo with an Express backend and React + Vite frontend.
+An AI-powered candidate screening platform branded as "Uttarayan Recruit". Allows uploading, parsing, and evaluating resumes against job descriptions using Azure AI services. Built as a pnpm monorepo with an Express backend and React + Vite frontend. Features Uttarayan branding (orange + blue color scheme, logo in sidebar) and rich PDF report generation with logo, footer "Screened through Uttarayan", and full candidate profile data.
 
 ## Stack
 

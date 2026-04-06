@@ -18,12 +18,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-64 bg-sidebar border-none text-sidebar-foreground">
-              {/* Reuse sidebar styling for mobile sheet */}
-              <div className="h-16 flex items-center px-6 border-b border-sidebar-border gap-3">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white">
-                  <span className="font-bold text-sm">AI</span>
+              <div className="h-20 flex items-center px-6 border-b border-sidebar-border gap-3">
+                <img src="/uttarayan_logo.jpeg" alt="Uttarayan" className="w-10 h-10 rounded-lg object-cover" />
+                <div className="flex flex-col leading-tight">
+                  <span className="font-display font-bold text-base text-white">Uttarayan</span>
+                  <span className="font-display font-semibold text-xs text-primary">Recruit</span>
                 </div>
-                <span className="font-display font-bold text-xl">RecruitAI</span>
               </div>
               <div className="py-6 px-4 flex flex-col gap-2">
                 <a href="/" className="px-3 py-2 rounded-lg bg-sidebar-accent font-medium">Dashboard</a>
@@ -31,7 +31,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </SheetContent>
           </Sheet>
-          <span className="font-display font-bold text-lg ml-2">Recruit<span className="text-primary">AI</span></span>
+          <div className="flex items-center gap-2 ml-2">
+            <img src="/uttarayan_logo.jpeg" alt="Uttarayan" className="w-7 h-7 rounded object-cover" />
+            <span className="font-display font-bold text-lg">Uttarayan <span className="text-primary">Recruit</span></span>
+          </div>
         </header>
 
         {/* Main Content Area */}

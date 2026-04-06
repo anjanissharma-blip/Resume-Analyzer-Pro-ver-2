@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, UploadCloud, BarChart3, Settings, Bot, ClipboardList } from "lucide-react";
+import { LayoutDashboard, UploadCloud, BarChart3, Settings, ClipboardList } from "lucide-react";
 import { clsx } from "clsx";
 
 const navLinks = [
@@ -18,13 +18,20 @@ export function Sidebar() {
   return (
     <aside className="w-60 bg-sidebar text-sidebar-foreground flex flex-col shadow-xl z-20 hidden md:flex shrink-0">
       {/* Logo */}
-      <div className="h-16 flex items-center px-5 border-b border-sidebar-border gap-3 shrink-0">
-        <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/30">
-          <Bot size={20} />
+      <div className="h-20 flex items-center px-5 border-b border-sidebar-border gap-3 shrink-0">
+        <img
+          src="/uttarayan_logo.jpeg"
+          alt="Uttarayan"
+          className="w-10 h-10 rounded-lg object-cover shadow-lg shadow-primary/30 shrink-0"
+        />
+        <div className="flex flex-col leading-tight">
+          <span className="font-display font-bold text-base tracking-tight text-white">
+            Uttarayan
+          </span>
+          <span className="font-display font-semibold text-xs text-primary tracking-wide">
+            Recruit
+          </span>
         </div>
-        <span className="font-display font-bold text-xl tracking-tight">
-          Recruit<span className="text-primary">AI</span>
-        </span>
       </div>
 
       <div className="flex-1 py-5 px-3 flex flex-col gap-1 overflow-y-auto">

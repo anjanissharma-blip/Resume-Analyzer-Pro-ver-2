@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import { useResumeData } from "@/hooks/use-resumes";
-import { getDownloadResumeReportUrl } from "@workspace/api-client-react";
 import { CircularProgress } from "@/components/ui/circular-progress";
+import { SingleDownloadDialog } from "@/components/DownloadDialog";
 import {
   ArrowLeft, Download, Mail, Phone, MapPin, Calendar, Briefcase,
   GraduationCap, User, FileText, CheckCircle2, XCircle, ShieldCheck,
@@ -19,6 +19,7 @@ export function ResumeDetail() {
   const { resumeId } = useParams<{ resumeId: string }>();
   const { data: resume, isLoading } = useResumeData(resumeId);
   const [activeTab, setActiveTab] = useState<Tab>("profile");
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -56,7 +57,7 @@ export function ResumeDetail() {
         <Link href={`/jobs/${resume.jobId}`} className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft size={16} className="mr-2" /> Back to Candidates
         </Link>
-        <Button onClick={() => window.open(getDownloadResumeReportUrl(resumeId), "_blank")} variant="outline" className="bg-card shadow-sm">
+        <Button onClick={() => setDownloadOpen(true)} variant="outline" className="bg-card shadow-sm">
           <Download size={15} className="mr-2" /> Download Report
         </Button>
       </div>
@@ -394,6 +395,13 @@ export function ResumeDetail() {
           )}
         </div>
       )}
+      {/* Download Dialog */}
+      <SingleDownloadDialog
+        open={downloadOpen}
+        onOpenChange={setDownloadOpen}
+        resumeId={resumeId}
+        candidateName={resume.candidateName ?? undefined}
+      />
     </div>
   );
 }
