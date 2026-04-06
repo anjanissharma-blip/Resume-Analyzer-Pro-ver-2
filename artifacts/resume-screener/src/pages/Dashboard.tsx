@@ -146,26 +146,26 @@ function CostCounter({ costs, isLoading }: { costs: ReturnType<typeof useCostSta
             <CostTile
               label="Total Billable"
               value={`$${fmt(costs.totalCost)}`}
-              sub={`Across all actions`}
+              sub=""
               icon={<TrendingUp size={18} className="text-primary" />}
               accent
             />
             <CostTile
               label="Resumes Scanned"
               value={costs.firstScanCount.toLocaleString()}
-              sub={`$${fmt(costs.scanCost)} @ $${costs.rates.rateScan}/ea`}
+              sub=""
               icon={<FileText size={18} className="text-blue-500" />}
             />
             <CostTile
               label="Job Profiles"
               value={costs.jobCount.toLocaleString()}
-              sub={`$${fmt(costs.jobCost)} @ $${costs.rates.rateJob}/ea`}
+              sub=""
               icon={<Briefcase size={18} className="text-indigo-500" />}
             />
             <CostTile
               label="Reports Printed"
               value={(costs.individualPrints + costs.consolidatedPrints).toLocaleString()}
-              sub={`$${fmt(costs.printCost)} total`}
+              sub=""
               icon={<Printer size={18} className="text-slate-500" />}
             />
           </div>
@@ -249,7 +249,7 @@ function CostTile({ label, value, sub, icon, accent }: {
     <div className={`rounded-xl p-4 border ${accent ? "bg-primary/5 border-primary/20" : "bg-slate-50 border-slate-200"}`}>
       <div className="flex items-center gap-2 mb-2">{icon}<span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</span></div>
       <div className={`text-xl font-bold ${accent ? "text-primary" : "text-foreground"}`}>{value}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   );
 }
