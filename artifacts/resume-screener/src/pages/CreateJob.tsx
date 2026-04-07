@@ -7,7 +7,7 @@ import {
 } from "@/hooks/use-jobs";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Save, Pencil, Plus } from "lucide-react";
+import { ArrowLeft, Save, Pencil, Plus, Loader2, Sparkles, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
 
 interface FormState {
@@ -37,6 +37,8 @@ export function CreateJob() {
   const [form, setForm] = useState<FormState>(empty);
   const [jdFile, setJdFile] = useState<File | null>(null);
   const [uploadingJD, setUploadingJD] = useState(false);
+  const [jdError, setJdError] = useState<string | null>(null);
+  const [jdSuccess, setJdSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: existingJob, isLoading: loadingJob } = useJobData(jobId ?? "");
@@ -63,24 +65,22 @@ export function CreateJob() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
   const uploadJD = async () => {
-    if (!jdFile) {
-      alert("Please select a JD file");
-      return;
-    }
-
+    if (!jdFile) return;
+    setJdError(null);
+    setJdSuccess(false);
+    setUploadingJD(true);
     try {
-      setUploadingJD(true);
-
       const formData = new FormData();
       formData.append("jd", jdFile);
-
       const res = await fetch("/api/jobs/upload-jd", {
         method: "POST",
         body: formData,
       });
-
       const data = await res.json();
-
+      if (!res.ok) {
+        setJdError(data.error ?? "JD processing failed. Please try again.");
+        return;
+      }
       setForm({
         jobRefNumber: data.jobRefNumber ?? "",
         title: data.title ?? "",
@@ -90,12 +90,13 @@ export function CreateJob() {
         experienceRequired: data.experienceRequired ?? "",
         educationRequired: data.educationRequired ?? "",
       });
+      setJdSuccess(true);
     } catch (err) {
       console.error(err);
-      alert("JD upload failed");
+      setJdError("Network error — please check your connection and try again.");
+    } finally {
+      setUploadingJD(false);
     }
-
-    setUploadingJD(false);
   };
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,43 +152,74 @@ export function CreateJob() {
         {isEditing ? "Back to Job" : "Back to Jobs"}
       </Link>
 
-      <div className="bg-card rounded-2xl shadow-sm border border-border p-6">
-        <h3 className="text-lg font-semibold mb-3">Upload Job Description</h3>
+      <div className="bg-card rounded-2xl shadow-sm border border-border p-6 space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold">Upload Job Description</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Upload a PDF, DOCX, or TXT file — AI will extract the title, required skills, experience, and education automatically, whether stated explicitly or in sentence form.
+          </p>
+        </div>
 
-        <div className="flex items-center gap-3">
-          <input
-            type="file"
-            accept=".pdf,.docx,.txt"
-            ref={fileInputRef}
-            style={{ display: "none" }}
-            onChange={(e) => setJdFile(e.target.files?.[0] || null)}
-          />
+        <input
+          type="file"
+          accept=".pdf,.docx,.txt"
+          ref={fileInputRef}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            setJdFile(e.target.files?.[0] || null);
+            setJdError(null);
+            setJdSuccess(false);
+          }}
+        />
 
+        <div className="flex items-center gap-3 flex-wrap">
           <Button
             type="button"
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingJD}
           >
-            Browse JD File
+            Browse File
           </Button>
 
           <Button
             type="button"
             onClick={uploadJD}
             disabled={uploadingJD || !jdFile}
+            className="bg-primary hover:bg-primary/90 text-white"
           >
-            {uploadingJD ? "Processing..." : "Upload JD"}
+            {uploadingJD ? (
+              <><Loader2 size={15} className="mr-2 animate-spin" /> Analysing JD…</>
+            ) : (
+              <><Sparkles size={15} className="mr-2" /> Parse with AI</>
+            )}
           </Button>
 
-          {jdFile && (
+          {jdFile && !uploadingJD && (
             <span className="text-sm text-muted-foreground">{jdFile.name}</span>
           )}
-
-          <p className="text-xs text-muted-foreground mt-2">
-            Upload a job description file and AI will automatically fill the
-            form.
-          </p>
         </div>
+
+        {uploadingJD && (
+          <div className="flex items-center gap-2 text-sm text-primary">
+            <Loader2 size={14} className="animate-spin" />
+            Extracting text and parsing requirements — this takes a few seconds…
+          </div>
+        )}
+
+        {jdSuccess && (
+          <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            <Sparkles size={14} />
+            Form filled from JD — review and adjust the fields below before saving.
+          </div>
+        )}
+
+        {jdError && (
+          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            {jdError}
+          </div>
+        )}
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           {isEditing ? (
             <>

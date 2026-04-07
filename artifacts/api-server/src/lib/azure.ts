@@ -64,6 +64,85 @@ function safeParseJSON(raw: string): Record<string, unknown> | null {
   }
 }
 
+export interface ParsedJobDescription {
+  title: string;
+  department: string;
+  jobRefNumber: string;
+  description: string;
+  requiredSkills: string[];
+  experienceRequired: string;
+  educationRequired: string;
+}
+
+export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
+  const client = getOpenAIClient();
+
+  const prompt = `You are an expert HR analyst. Parse the following job description and extract key structured fields.
+The JD may state requirements explicitly (e.g. bullet lists) OR in sentence form (e.g. "candidates should have 5+ years of experience in...").
+Parse ALL forms carefully.
+
+Job Description:
+${jdText.substring(0, 8000)}
+
+Return ONLY a valid JSON object with exactly these fields (no markdown, no code fences):
+{
+  "title": "<job title as stated in the JD>",
+  "department": "<department or business unit if mentioned, else empty string>",
+  "jobRefNumber": "<job reference / requisition ID if present in text, else empty string>",
+  "requiredSkills": ["<skill1>", "<skill2>", ...],
+  "experienceRequired": "<concise statement of experience requirement, e.g. '5+ years in finance and accounting roles' — extract even if stated in sentence form>",
+  "educationRequired": "<concise statement of education requirement, e.g. 'Bachelor degree in Computer Science or equivalent' — extract even if stated in sentence form>"
+}
+
+Rules:
+- requiredSkills: extract EVERY distinct skill, technology, tool, certification, or domain knowledge mentioned as required or preferred — include both explicit lists and skills implied within sentences
+- experienceRequired: summarise in one line; if multiple experience points, list the most important ones separated by semicolons
+- educationRequired: summarise in one line; include degree level, field, and any certifications
+- If a field is genuinely not present, return an empty string or empty array
+- jobRefNumber: only populate if the JD explicitly contains a reference/req/job ID code`;
+
+  const response = await client.chat.completions.create({
+    model: deploymentName,
+    messages: [
+      {
+        role: "system",
+        content: "You are a precise HR data extraction assistant. Always output valid JSON only. Never add markdown or commentary.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0,
+    max_tokens: 1500,
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  const parsed = safeParseJSON(raw);
+
+  const fallbackRef = `JD-${Date.now()}`;
+
+  if (!parsed) {
+    console.warn("parseJobDescription: failed to parse JSON, raw:", raw.substring(0, 200));
+    return {
+      title: "Extracted Job Title",
+      department: "",
+      jobRefNumber: fallbackRef,
+      description: jdText,
+      requiredSkills: [],
+      experienceRequired: "",
+      educationRequired: "",
+    };
+  }
+
+  return {
+    title: typeof parsed.title === "string" && parsed.title ? parsed.title : "Extracted Job Title",
+    department: typeof parsed.department === "string" ? parsed.department : "",
+    jobRefNumber: typeof parsed.jobRefNumber === "string" && parsed.jobRefNumber ? parsed.jobRefNumber : fallbackRef,
+    description: jdText,
+    requiredSkills: Array.isArray(parsed.requiredSkills) ? (parsed.requiredSkills as string[]).filter(Boolean) : [],
+    experienceRequired: typeof parsed.experienceRequired === "string" ? parsed.experienceRequired : "",
+    educationRequired: typeof parsed.educationRequired === "string" ? parsed.educationRequired : "",
+  };
+}
+
 export interface ParsedCandidate {
   name?: string;
   email?: string;

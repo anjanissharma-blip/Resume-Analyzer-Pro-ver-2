@@ -4,6 +4,7 @@ import { jobsTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import multer from "multer";
+import { extractTextFromBuffer, parseJobDescription } from "../lib/azure";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -11,28 +12,36 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.post("/upload-jd", upload.single("jd"), async (req, res) => {
   try {
     const file = req.file;
+    if (!file) return res.status(400).json({ error: "No JD file uploaded" });
 
-    if (!file) {
-      return res.status(400).send("No JD file uploaded");
+    // Determine mime type
+    const ext = (file.originalname ?? "").split(".").pop()?.toLowerCase();
+    let mimeType = file.mimetype;
+    if (!mimeType || mimeType === "application/octet-stream") {
+      if (ext === "pdf") mimeType = "application/pdf";
+      else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      else mimeType = "text/plain";
     }
 
-    const text = file.buffer.toString();
+    let jdText: string;
+    if (ext === "txt" || mimeType === "text/plain") {
+      // Plain text: no need for Document Intelligence
+      jdText = file.buffer.toString("utf-8");
+    } else {
+      // PDF / DOCX: use Azure Document Intelligence
+      jdText = await extractTextFromBuffer(file.buffer, mimeType);
+    }
 
-    // basic extraction placeholder
-    const job = {
-      jobRefNumber: `REQ-${Date.now()}`,
-      title: "Extracted Job Title",
-      department: "",
-      description: text,
-      requiredSkills: [],
-      experienceRequired: "",
-      educationRequired: "",
-    };
+    if (!jdText || jdText.trim().length < 50) {
+      return res.status(422).json({ error: "Could not extract readable text from the uploaded file. Please try a different format." });
+    }
 
-    res.json(job);
+    // Use AI to parse title, department, skills, experience, education
+    const parsed = await parseJobDescription(jdText);
+    res.json(parsed);
   } catch (err) {
-    console.error(err);
-    res.status(500).send("JD processing failed");
+    console.error("JD upload error:", err);
+    res.status(500).json({ error: "JD processing failed. Please check the file and try again." });
   }
 });
 
