@@ -81,88 +81,197 @@ function cleanJDText(raw: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/[\u2012\u2013\u2014\u2015\u2053\u2212\uFE58\uFE63\uFF0D]/g, "-") // normalize dashes
+    .replace(/[\u2012\u2013\u2014\u2015\u2053\u2212\uFE58\uFE63\uFF0D]/g, "-")
     .replace(/\r\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
-  const client = getOpenAIClient();
-  const cleaned = cleanJDText(jdText);
+/** Extract a labeled field value, e.g. "Experience required: 5 years" → "5 years" */
+function extractLabeled(text: string, ...labels: string[]): string {
+  for (const label of labels) {
+    const re = new RegExp(
+      label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:\\-]?\\s*(.+?)(?=\\n|$)",
+      "i"
+    );
+    const m = text.match(re);
+    if (m && m[1].trim().length > 2) return m[1].trim();
+  }
+  return "";
+}
 
-  const prompt = `Read the job description below and extract the requested fields. The text may use bullet points, numbered lists, or plain sentences — handle all formats.
+/** Extract the job title from common patterns */
+function extractTitle(text: string): string {
+  // Pattern: "JOB DESCRIPTION: TITLE" or "Job Title: TITLE"
+  const patterns = [
+    /job\s+(?:description|title|role|position)\s*[:\-]\s*(.+?)(?:\n|$)/i,
+    /position\s*[:\-]\s*(.+?)(?:\n|$)/i,
+    /role\s*[:\-]\s*(.+?)(?:\n|$)/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m && m[1].trim().length > 2) return toTitleCase(m[1].trim());
+  }
+  // First non-empty line that looks like a title (short, no lowercase sentence words)
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of lines.slice(0, 5)) {
+    if (line.length > 4 && line.length < 120 && !/^\d/.test(line)) {
+      return toTitleCase(line.replace(/^job description[:\s]*/i, "").trim());
+    }
+  }
+  return "";
+}
 
---- START JD ---
-${cleaned.substring(0, 8000)}
---- END JD ---
+function toTitleCase(s: string): string {
+  return s
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
 
-Now extract the following and respond with ONLY a JSON object, nothing else:
+/** Extract department from common patterns */
+function extractDepartment(text: string): string {
+  return extractLabeled(text, "Department", "Division", "Team", "Function");
+}
 
-1. title: The exact job title (e.g. "Senior Finance Manager")
-2. department: The department or team name if stated (e.g. "Finance & Corporate Services"), else ""
-3. jobRefNumber: A job/requisition reference code if present (e.g. "REQ-2024-001"), else ""
-4. requiredSkills: An array of ALL skills, tools, technologies, certifications and domain expertise mentioned anywhere in the JD. Look in every section including responsibilities, requirements, competencies, nice-to-have. Each skill as a short string.
-5. experienceRequired: A single string summarising the experience requirements. Look for phrases like "X years of experience", "prior experience in", "background in", "exposure to". If multiple, join with "; ".
-6. educationRequired: A single string summarising the education/qualification requirements. Look for degree names, professional certifications (CA, CPA, MBA, etc.). If multiple, join with "; ".
+/** Extract skills as bullet/comma list items from a "skills" or "requirements" block */
+function extractSkillsFromText(text: string): string[] {
+  const skills: Set<string> = new Set();
 
-IMPORTANT:
-- Do NOT leave requiredSkills as an empty array if any skills are mentioned anywhere in the JD.
-- Do NOT leave experienceRequired empty if any experience requirement is mentioned.
-- Do NOT leave educationRequired empty if any qualification is mentioned.
-- Extract from ALL sections — responsibilities often imply required skills.
+  // Find skill sections and grab bullet items
+  const sectionRe = /(?:technical\s+skills?|key\s+skills?|required\s+skills?|skills?\s*(?:&|and)\s*qualifications?|requirements?|competenc(?:y|ies)|tools?\s*(?:&|and)\s*technologies?)[^\n]*\n([\s\S]{0,1200}?)(?=\n[A-Z][A-Z\s]{3,}|\n\d\.\s|\n#{1,3}|$)/gi;
 
-Respond with ONLY this JSON structure:
-{"title":"...","department":"...","jobRefNumber":"...","requiredSkills":["...","..."],"experienceRequired":"...","educationRequired":"..."}`;
-
-  const response = await client.chat.completions.create({
-    model: deploymentName,
-    messages: [
-      {
-        role: "system",
-        content: "You extract structured data from job descriptions. Output ONLY valid JSON. No markdown, no explanation, no code fences. Fill every field based on what is actually in the text.",
-      },
-      { role: "user", content: prompt },
-    ],
-    temperature: 0,
-    max_tokens: 2000,
-  });
-
-  const raw = response.choices[0]?.message?.content ?? "{}";
-  console.log("JD parse raw AI response:", raw.substring(0, 500));
-  const parsed = safeParseJSON(raw);
-
-  const fallbackRef = `JD-${Date.now()}`;
-
-  if (!parsed) {
-    console.warn("parseJobDescription: failed to parse JSON, raw:", raw.substring(0, 300));
-    return {
-      title: "Extracted Job Title",
-      department: "",
-      jobRefNumber: fallbackRef,
-      description: jdText,
-      requiredSkills: [],
-      experienceRequired: "",
-      educationRequired: "",
-    };
+  let sectionMatch;
+  while ((sectionMatch = sectionRe.exec(text)) !== null) {
+    const block = sectionMatch[1];
+    // Extract items after -, •, *, numbered, or comma-separated
+    const items = block.split(/\n|;|,(?!\s+\d)/).map((s) => s.replace(/^[\s\-\*\•\·\d\.]+/, "").trim()).filter((s) => s.length > 2 && s.length < 100);
+    items.forEach((i) => skills.add(i));
   }
 
-  console.log("JD parsed result:", {
-    title: parsed.title,
-    department: parsed.department,
-    skillsCount: Array.isArray(parsed.requiredSkills) ? parsed.requiredSkills.length : 0,
-    experienceRequired: parsed.experienceRequired,
-    educationRequired: parsed.educationRequired,
+  // Also extract parenthetical tool lists like "(SAP, Oracle, M365)"
+  const toolLists = text.matchAll(/\(([A-Z][A-Za-z0-9\s,\/\-]+)\)/g);
+  for (const m of toolLists) {
+    m[1].split(",").map((s) => s.trim()).filter((s) => s.length > 1 && s.length < 50).forEach((t) => skills.add(t));
+  }
+
+  return Array.from(skills).filter(Boolean).slice(0, 30);
+}
+
+export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
+  const cleaned = cleanJDText(jdText);
+  const fallbackRef = `JD-${Date.now()}`;
+
+  // ── Step 1: Regex extraction for explicitly labeled fields ──────────────
+  const regexTitle = extractTitle(cleaned);
+  const regexDept = extractDepartment(cleaned);
+  const regexExperience = extractLabeled(
+    cleaned,
+    "Experience required",
+    "Experience",
+    "Years of experience",
+    "Minimum experience",
+    "Work experience"
+  );
+  const regexEducation = extractLabeled(
+    cleaned,
+    "Education required",
+    "Education",
+    "Qualification",
+    "Minimum qualification",
+    "Academic qualification",
+    "Degree required"
+  );
+  const regexSkills = extractSkillsFromText(cleaned);
+
+  console.log("JD regex extraction:", {
+    title: regexTitle,
+    dept: regexDept,
+    experience: regexExperience,
+    education: regexEducation,
+    skillsCount: regexSkills.length,
+    skills: regexSkills.slice(0, 5),
+  });
+
+  // ── Step 2: AI extraction (always run, merge with regex) ─────────────────
+  let aiTitle = "";
+  let aiDept = "";
+  let aiExperience = "";
+  let aiEducation = "";
+  let aiSkills: string[] = [];
+  let aiRef = "";
+
+  try {
+    const client = getOpenAIClient();
+
+    const prompt = `Extract the following fields from the job description and return ONLY a JSON object.
+
+JOB DESCRIPTION TEXT:
+${cleaned.substring(0, 6000)}
+
+Return this JSON with no other text:
+{"title":"job title here","department":"department name or empty string","jobRefNumber":"ref code or empty string","requiredSkills":["skill1","skill2","skill3"],"experienceRequired":"years and type of experience","educationRequired":"degree or certification required"}
+
+Rules:
+- title: the job title exactly as written
+- department: department or team name if mentioned
+- jobRefNumber: any reference/requisition code, else ""
+- requiredSkills: list every skill, tool, technology, certification mentioned anywhere
+- experienceRequired: summarise all experience requirements in one string
+- educationRequired: summarise all education/certification requirements in one string`;
+
+    const response = await client.chat.completions.create({
+      model: deploymentName,
+      messages: [
+        { role: "system", content: "You are a JSON extraction tool. Respond with valid JSON only. No markdown, no explanation." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0,
+      max_tokens: 1500,
+    });
+
+    const raw = response.choices[0]?.message?.content ?? "";
+    console.log("JD AI raw response:", raw.substring(0, 600));
+    const parsed = safeParseJSON(raw);
+
+    if (parsed) {
+      aiTitle = typeof parsed.title === "string" ? parsed.title.trim() : "";
+      aiDept = typeof parsed.department === "string" ? parsed.department.trim() : "";
+      aiRef = typeof parsed.jobRefNumber === "string" ? parsed.jobRefNumber.trim() : "";
+      aiExperience = typeof parsed.experienceRequired === "string" ? parsed.experienceRequired.trim() : "";
+      aiEducation = typeof parsed.educationRequired === "string" ? parsed.educationRequired.trim() : "";
+      aiSkills = Array.isArray(parsed.requiredSkills)
+        ? (parsed.requiredSkills as unknown[]).filter((s) => typeof s === "string" && s.trim().length > 1).map((s) => (s as string).trim())
+        : [];
+    }
+  } catch (err) {
+    console.warn("JD AI extraction failed, using regex only:", err instanceof Error ? err.message : err);
+  }
+
+  // ── Step 3: Merge — prefer AI result if non-empty, else fall back to regex ──
+  const mergedSkills = Array.from(new Set([...aiSkills, ...regexSkills])).filter(Boolean).slice(0, 30);
+  const finalTitle = (aiTitle && aiTitle.length > 2) ? aiTitle : regexTitle || "Extracted Job Title";
+  const finalDept = aiDept || regexDept;
+  const finalExperience = aiExperience || regexExperience;
+  const finalEducation = aiEducation || regexEducation;
+  const finalRef = aiRef || fallbackRef;
+
+  console.log("JD final merged result:", {
+    title: finalTitle,
+    dept: finalDept,
+    skillsCount: mergedSkills.length,
+    experience: finalExperience,
+    education: finalEducation,
   });
 
   return {
-    title: typeof parsed.title === "string" && parsed.title ? parsed.title : "Extracted Job Title",
-    department: typeof parsed.department === "string" ? parsed.department : "",
-    jobRefNumber: typeof parsed.jobRefNumber === "string" && parsed.jobRefNumber ? parsed.jobRefNumber : fallbackRef,
+    title: finalTitle,
+    department: finalDept,
+    jobRefNumber: finalRef,
     description: jdText,
-    requiredSkills: Array.isArray(parsed.requiredSkills) ? (parsed.requiredSkills as string[]).filter(Boolean) : [],
-    experienceRequired: typeof parsed.experienceRequired === "string" ? parsed.experienceRequired : "",
-    educationRequired: typeof parsed.educationRequired === "string" ? parsed.educationRequired : "",
+    requiredSkills: mergedSkills,
+    experienceRequired: finalExperience,
+    educationRequired: finalEducation,
   };
 }
 
