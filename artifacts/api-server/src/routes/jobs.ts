@@ -36,8 +36,18 @@ router.post("/upload-jd", upload.single("jd"), async (req, res) => {
       return res.status(422).json({ error: "Could not extract readable text from the uploaded file. Please try a different format." });
     }
 
+    console.log(`JD text extracted (${jdText.length} chars). First 200: ${jdText.substring(0, 200)}`);
+
     // Use AI to parse title, department, skills, experience, education
     const parsed = await parseJobDescription(jdText);
+    console.log("JD final parsed:", {
+      title: parsed.title,
+      department: parsed.department,
+      skillsCount: parsed.requiredSkills.length,
+      skills: parsed.requiredSkills.slice(0, 5),
+      experienceRequired: parsed.experienceRequired,
+      educationRequired: parsed.educationRequired,
+    });
     res.json(parsed);
   } catch (err) {
     console.error("JD upload error:", err);

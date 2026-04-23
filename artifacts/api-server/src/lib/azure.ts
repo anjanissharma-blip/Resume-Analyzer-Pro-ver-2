@@ -74,53 +74,68 @@ export interface ParsedJobDescription {
   educationRequired: string;
 }
 
-export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
-  const client = getOpenAIClient();
-
-  const prompt = `You are an expert HR analyst. Parse the following job description and extract key structured fields.
-The JD may state requirements explicitly (e.g. bullet lists) OR in sentence form (e.g. "candidates should have 5+ years of experience in...").
-Parse ALL forms carefully.
-
-Job Description:
-${jdText.substring(0, 8000)}
-
-Return ONLY a valid JSON object with exactly these fields (no markdown, no code fences):
-{
-  "title": "<job title as stated in the JD>",
-  "department": "<department or business unit if mentioned, else empty string>",
-  "jobRefNumber": "<job reference / requisition ID if present in text, else empty string>",
-  "requiredSkills": ["<skill1>", "<skill2>", ...],
-  "experienceRequired": "<concise statement of experience requirement, e.g. '5+ years in finance and accounting roles' — extract even if stated in sentence form>",
-  "educationRequired": "<concise statement of education requirement, e.g. 'Bachelor degree in Computer Science or equivalent' — extract even if stated in sentence form>"
+function cleanJDText(raw: string): string {
+  return raw
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[\u2012\u2013\u2014\u2015\u2053\u2212\uFE58\uFE63\uFF0D]/g, "-") // normalize dashes
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-Rules:
-- requiredSkills: extract EVERY distinct skill, technology, tool, certification, or domain knowledge mentioned as required or preferred — include both explicit lists and skills implied within sentences
-- experienceRequired: summarise in one line; if multiple experience points, list the most important ones separated by semicolons
-- educationRequired: summarise in one line; include degree level, field, and any certifications
-- If a field is genuinely not present, return an empty string or empty array
-- jobRefNumber: only populate if the JD explicitly contains a reference/req/job ID code`;
+export async function parseJobDescription(jdText: string): Promise<ParsedJobDescription> {
+  const client = getOpenAIClient();
+  const cleaned = cleanJDText(jdText);
+
+  const prompt = `Read the job description below and extract the requested fields. The text may use bullet points, numbered lists, or plain sentences — handle all formats.
+
+--- START JD ---
+${cleaned.substring(0, 8000)}
+--- END JD ---
+
+Now extract the following and respond with ONLY a JSON object, nothing else:
+
+1. title: The exact job title (e.g. "Senior Finance Manager")
+2. department: The department or team name if stated (e.g. "Finance & Corporate Services"), else ""
+3. jobRefNumber: A job/requisition reference code if present (e.g. "REQ-2024-001"), else ""
+4. requiredSkills: An array of ALL skills, tools, technologies, certifications and domain expertise mentioned anywhere in the JD. Look in every section including responsibilities, requirements, competencies, nice-to-have. Each skill as a short string.
+5. experienceRequired: A single string summarising the experience requirements. Look for phrases like "X years of experience", "prior experience in", "background in", "exposure to". If multiple, join with "; ".
+6. educationRequired: A single string summarising the education/qualification requirements. Look for degree names, professional certifications (CA, CPA, MBA, etc.). If multiple, join with "; ".
+
+IMPORTANT:
+- Do NOT leave requiredSkills as an empty array if any skills are mentioned anywhere in the JD.
+- Do NOT leave experienceRequired empty if any experience requirement is mentioned.
+- Do NOT leave educationRequired empty if any qualification is mentioned.
+- Extract from ALL sections — responsibilities often imply required skills.
+
+Respond with ONLY this JSON structure:
+{"title":"...","department":"...","jobRefNumber":"...","requiredSkills":["...","..."],"experienceRequired":"...","educationRequired":"..."}`;
 
   const response = await client.chat.completions.create({
     model: deploymentName,
     messages: [
       {
         role: "system",
-        content: "You are a precise HR data extraction assistant. Always output valid JSON only. Never add markdown or commentary.",
+        content: "You extract structured data from job descriptions. Output ONLY valid JSON. No markdown, no explanation, no code fences. Fill every field based on what is actually in the text.",
       },
       { role: "user", content: prompt },
     ],
     temperature: 0,
-    max_tokens: 1500,
+    max_tokens: 2000,
   });
 
   const raw = response.choices[0]?.message?.content ?? "{}";
+  console.log("JD parse raw AI response:", raw.substring(0, 500));
   const parsed = safeParseJSON(raw);
 
   const fallbackRef = `JD-${Date.now()}`;
 
   if (!parsed) {
-    console.warn("parseJobDescription: failed to parse JSON, raw:", raw.substring(0, 200));
+    console.warn("parseJobDescription: failed to parse JSON, raw:", raw.substring(0, 300));
     return {
       title: "Extracted Job Title",
       department: "",
@@ -131,6 +146,14 @@ Rules:
       educationRequired: "",
     };
   }
+
+  console.log("JD parsed result:", {
+    title: parsed.title,
+    department: parsed.department,
+    skillsCount: Array.isArray(parsed.requiredSkills) ? parsed.requiredSkills.length : 0,
+    experienceRequired: parsed.experienceRequired,
+    educationRequired: parsed.educationRequired,
+  });
 
   return {
     title: typeof parsed.title === "string" && parsed.title ? parsed.title : "Extracted Job Title",
